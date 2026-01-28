@@ -1,0 +1,14 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "KA5DZ8RZ59.com.mikesolis.rekindle.staging",
+        "paths": [
+          "/link/accept*",
+          "/link/*"
+        ]
+      }
+    ]
+  }
+}

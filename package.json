@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "node scripts/sync-well-known.mjs",
+    "prebuild": "node scripts/sync-well-known.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",

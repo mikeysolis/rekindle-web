@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.mikesolis.rekindle.staging",
+      "sha256_cert_fingerprints": [
+        "EF:A3:0C:09:15:B8:E1:03:54:5A:59:7E:7B:6F:F6:44:5E:79:D4:77:5F:DF:59:09:A5:B7:7F:34:99:BD:32:C1"
+      ]
+    }
+  }
+]

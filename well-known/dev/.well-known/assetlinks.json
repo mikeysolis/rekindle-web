@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.mikesolis.rekindle.dev",
+      "sha256_cert_fingerprints": [
+        "CE:23:48:51:AD:0A:DF:A4:03:A8:CB:F2:A4:BB:48:7C:33:F5:AA:9E:C9:EC:81:41:8B:48:95:B0:BF:3C:EE:B2"
+      ]
+    }
+  }
+]
