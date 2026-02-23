@@ -7,3 +7,4 @@ All notable changes to this project will be documented in this file.
 ### Updates
 - Initial commit
 - well-known files setup
+- Added documentation for Idea research and Idea Studio
