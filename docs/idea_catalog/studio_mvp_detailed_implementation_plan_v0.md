@@ -108,9 +108,9 @@ Reason: keeps marketing unaffected while Studio grows.
 ## 6) Planned file/module blueprint
 
 ## 6.1 Supabase + auth foundation
-- `lib/supabase/browser.ts`
-- `lib/supabase/server.ts`
-- `lib/supabase/middleware.ts` (if middleware refresh helper needed)
+- `lib/database/browser.ts`
+- `lib/database/server.ts`
+- `lib/database/middleware.ts` (if proxy refresh helper needed)
 - `middleware.ts` (protect `/studio/*`, allow `/studio/login`)
 - `lib/studio/auth.ts` (`getStudioUserOrNull`, `requireStudioUser`, role checks)
 

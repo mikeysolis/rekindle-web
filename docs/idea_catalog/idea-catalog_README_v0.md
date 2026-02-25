@@ -35,6 +35,9 @@ These docs are intentionally **strategy + operating system** level. They avoid i
 9) **Studio MVP Detailed Implementation Plan (Steps 1-2-3A)** — execution checklist and resume protocol
    - `studio_mvp_detailed_implementation_plan_v0.md`
 
+10) **Studio MVP Schema SQL (Steps 1-2-3A)** — copy-ready table + RLS migration for DB repo
+   - `studio_mvp_steps_1_2_3A_schema_v0.sql`
+
 ---
 
 ## Related existing specs
