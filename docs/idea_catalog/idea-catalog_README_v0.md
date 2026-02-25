@@ -32,6 +32,9 @@ These docs are intentionally **strategy + operating system** level. They avoid i
 8) **Milestones & Roadmap** — high-level execution plan across pre-Studio + Studio phases
    - `idea-catalog_milestones-roadmap_v0.md`
 
+9) **Studio MVP Detailed Implementation Plan (Steps 1-2-3A)** — execution checklist and resume protocol
+   - `studio_mvp_detailed_implementation_plan_v0.md`
+
 ---
 
 ## Related existing specs
