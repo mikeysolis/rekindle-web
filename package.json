@@ -12,7 +12,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "supabase:start": "supabase start --workdir ./db",
+    "supabase:stop": "supabase stop --workdir ./db",
+    "supabase:reset": "supabase db reset --workdir ./db"
   },
   "dependencies": {
     "@supabase/ssr": "^0.8.0",
