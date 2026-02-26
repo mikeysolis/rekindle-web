@@ -1,6 +1,6 @@
 import type { IdeaDraft } from "@/lib/studio/drafts";
 import { evaluatePublishGate, type TraitSelectionsByTypeSlug } from "@/lib/studio/publish-gate";
-import type { IdeaTraitBinding } from "@/lib/studio/registry";
+import type { IdeaTraitBinding } from "@/lib/studio/registry-types";
 import {
   EXPORT_COLUMN_ORDER,
   MULTI_TRAIT_TYPES,

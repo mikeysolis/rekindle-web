@@ -1,10 +1,44 @@
+"use client";
+
 import type { PublishGateResult } from "@/lib/studio/publish-gate";
 
 type PublishGatePanelProps = {
   gate: PublishGateResult;
+  baseFieldLabels?: Record<string, string>;
+  traitLabelsBySlug?: Record<string, string>;
+  onJumpToBaseField?: (field: string) => void;
+  onJumpToTrait?: (traitTypeSlug: string) => void;
 };
 
-export default function PublishGatePanel({ gate }: PublishGatePanelProps) {
+function renderListItemButton(
+  key: string,
+  label: string,
+  onClick?: () => void,
+) {
+  if (!onClick) {
+    return <li key={key}>{label}</li>;
+  }
+
+  return (
+    <li key={key}>
+      <button
+        type="button"
+        onClick={onClick}
+        className="underline decoration-zinc-400 underline-offset-2 hover:decoration-zinc-900"
+      >
+        {label}
+      </button>
+    </li>
+  );
+}
+
+export default function PublishGatePanel({
+  gate,
+  baseFieldLabels = {},
+  traitLabelsBySlug = {},
+  onJumpToBaseField,
+  onJumpToTrait,
+}: PublishGatePanelProps) {
   return (
     <section className="rounded border border-zinc-300 bg-white p-4">
       <h2 className="mb-2 text-base font-semibold">Publish Gate</h2>
@@ -18,9 +52,13 @@ export default function PublishGatePanel({ gate }: PublishGatePanelProps) {
             <div>
               <p className="font-medium">Missing base fields</p>
               <ul className="list-disc pl-6">
-                {gate.missingBaseFields.map((field) => (
-                  <li key={field}>{field}</li>
-                ))}
+                {gate.missingBaseFields.map((field) =>
+                  renderListItemButton(
+                    field,
+                    baseFieldLabels[field] ?? field,
+                    onJumpToBaseField ? () => onJumpToBaseField(field) : undefined,
+                  ),
+                )}
               </ul>
             </div>
           )}
@@ -29,9 +67,13 @@ export default function PublishGatePanel({ gate }: PublishGatePanelProps) {
             <div>
               <p className="font-medium">Missing Tier 1 trait selections</p>
               <ul className="list-disc pl-6">
-                {gate.missingTraitTypeSlugs.map((slug) => (
-                  <li key={slug}>{slug}</li>
-                ))}
+                {gate.missingTraitTypeSlugs.map((slug) =>
+                  renderListItemButton(
+                    slug,
+                    traitLabelsBySlug[slug] ?? slug,
+                    onJumpToTrait ? () => onJumpToTrait(slug) : undefined,
+                  ),
+                )}
               </ul>
             </div>
           )}

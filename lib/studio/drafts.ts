@@ -6,7 +6,7 @@ import {
   type PublishGateResult,
   type TraitSelectionsByTypeSlug,
 } from "@/lib/studio/publish-gate";
-import type { IdeaTraitBinding } from "@/lib/studio/registry";
+import type { IdeaTraitBinding } from "@/lib/studio/registry-types";
 
 export const DRAFT_STATUSES = [
   "draft",

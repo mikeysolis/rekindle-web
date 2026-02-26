@@ -1,7 +1,4 @@
-import {
-  getTierOneRequiredBindings,
-  type IdeaTraitBinding,
-} from "@/lib/studio/registry";
+import type { IdeaTraitBinding } from "@/lib/studio/registry-types";
 
 export type TraitSelectionsByTypeSlug = Record<string, string[]>;
 
@@ -62,7 +59,11 @@ export function evaluatePublishGate(input: PublishGateInput): PublishGateResult 
 
   const missingTraitTypeSlugs: string[] = [];
 
-  for (const binding of getTierOneRequiredBindings(input.bindings)) {
+  const requiredTierOneBindings = input.bindings.filter(
+    (binding) => binding.tier === 1 && binding.isRequired,
+  );
+
+  for (const binding of requiredTierOneBindings) {
     const selected = input.traitSelectionsByTypeSlug[binding.traitTypeSlug] ?? [];
 
     if (binding.selectMode === "single") {

@@ -1,4 +1,4 @@
-import type { IdeaTraitBinding } from "@/lib/studio/registry";
+import type { IdeaTraitBinding } from "@/lib/studio/registry-types";
 
 type RegistryTableProps = {
   bindings: IdeaTraitBinding[];

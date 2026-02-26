@@ -42,6 +42,10 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   } = await supabase.auth.getUser();
 
   if (userError) {
+    if (isLoginRoute || isAccessDeniedRoute) {
+      return response;
+    }
+
     return redirectWithCookies(request, response, STUDIO_LOGIN_PATH);
   }
 

@@ -282,6 +282,135 @@ export type Database = {
           },
         ]
       }
+      idea_draft_traits: {
+        Row: {
+          created_at: string
+          draft_id: string
+          id: string
+          select_mode: string
+          trait_option_id: string
+          trait_type_id: string
+        }
+        Insert: {
+          created_at?: string
+          draft_id: string
+          id?: string
+          select_mode: string
+          trait_option_id: string
+          trait_type_id: string
+        }
+        Update: {
+          created_at?: string
+          draft_id?: string
+          id?: string
+          select_mode?: string
+          trait_option_id?: string
+          trait_type_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "idea_draft_traits_draft_id_fkey"
+            columns: ["draft_id"]
+            isOneToOne: false
+            referencedRelation: "idea_drafts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "idea_draft_traits_trait_option_id_fkey"
+            columns: ["trait_option_id"]
+            isOneToOne: false
+            referencedRelation: "trait_options"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "idea_draft_traits_trait_option_id_fkey"
+            columns: ["trait_option_id"]
+            isOneToOne: false
+            referencedRelation: "v_trait_options_localized"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "idea_draft_traits_trait_type_id_fkey"
+            columns: ["trait_type_id"]
+            isOneToOne: false
+            referencedRelation: "trait_types"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "idea_draft_traits_trait_type_id_fkey"
+            columns: ["trait_type_id"]
+            isOneToOne: false
+            referencedRelation: "v_trait_types_localized"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      idea_drafts: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          description: string | null
+          editorial_note: string | null
+          exported_at: string | null
+          id: string
+          max_minutes: number | null
+          min_minutes: number | null
+          reason_snippet: string | null
+          safety_or_boundaries_note: string | null
+          source_url: string | null
+          status: string
+          steps: string | null
+          tips_or_variations: string | null
+          title: string | null
+          updated_at: string
+          updated_by: string | null
+          what_you_need: string | null
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          editorial_note?: string | null
+          exported_at?: string | null
+          id?: string
+          max_minutes?: number | null
+          min_minutes?: number | null
+          reason_snippet?: string | null
+          safety_or_boundaries_note?: string | null
+          source_url?: string | null
+          status?: string
+          steps?: string | null
+          tips_or_variations?: string | null
+          title?: string | null
+          updated_at?: string
+          updated_by?: string | null
+          what_you_need?: string | null
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          editorial_note?: string | null
+          exported_at?: string | null
+          id?: string
+          max_minutes?: number | null
+          min_minutes?: number | null
+          reason_snippet?: string | null
+          safety_or_boundaries_note?: string | null
+          source_url?: string | null
+          status?: string
+          steps?: string | null
+          tips_or_variations?: string | null
+          title?: string | null
+          updated_at?: string
+          updated_by?: string | null
+          what_you_need?: string | null
+        }
+        Relationships: []
+      }
       idea_traits: {
         Row: {
           created_at: string
@@ -1244,6 +1373,24 @@ export type Database = {
           },
         ]
       }
+      studio_users: {
+        Row: {
+          created_at: string
+          role: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          role: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          role?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       trait_bindings: {
         Row: {
           context: string
@@ -2118,6 +2265,7 @@ export type Database = {
           invite_token: string
         }[]
       }
+      current_studio_role: { Args: never; Returns: string }
       ensure_self_person: { Args: never; Returns: string }
       get_person_trait_preferences_snapshot: {
         Args: { p_person_id: string }
@@ -2153,6 +2301,9 @@ export type Database = {
         Args: { p_connection_id: string; p_user_id?: string }
         Returns: boolean
       }
+      is_studio_admin: { Args: never; Returns: boolean }
+      is_studio_editor_or_admin: { Args: never; Returns: boolean }
+      is_studio_user: { Args: never; Returns: boolean }
       list_person_nudge_summary: {
         Args: { p_as_of_date?: string; p_person_ids: string[] }
         Returns: {

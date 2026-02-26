@@ -1,49 +1,24 @@
 import { createSupabaseServerClient } from "@/lib/database/server";
+import type {
+  IdeaRegistrySnapshot,
+  IdeaTraitBinding,
+  RegistryTraitOption,
+  RegistryTraitType,
+  TraitSelectMode,
+} from "@/lib/studio/registry-types";
 
-export type TraitSelectMode = "single" | "multi";
-
-export type RegistryTraitType = {
-  id: string;
-  slug: string;
-  label: string;
-  sortOrder: number | null;
-};
-
-export type RegistryTraitOption = {
-  id: string;
-  traitTypeId: string;
-  slug: string;
-  label: string;
-  sortOrder: number | null;
-  isDeprecated: boolean;
-};
-
-export type IdeaTraitBinding = {
-  id: string;
-  context: string;
-  traitTypeId: string;
-  traitTypeSlug: string;
-  traitTypeLabel: string;
-  tier: 1 | 2 | 3;
-  selectMode: TraitSelectMode;
-  isRequired: boolean;
-  minRequired: number;
-  uiGroupSlug: string | null;
-  uiHint: string | null;
-  sortOrder: number | null;
-  options: RegistryTraitOption[];
-};
-
-export type IdeaRegistrySnapshot = {
-  traitTypes: RegistryTraitType[];
-  bindings: IdeaTraitBinding[];
-};
+export type {
+  IdeaRegistrySnapshot,
+  IdeaTraitBinding,
+  RegistryTraitOption,
+  RegistryTraitType,
+  TraitSelectMode,
+} from "@/lib/studio/registry-types";
 
 type RawTraitTypeRow = {
   id: string;
   slug: string;
   name?: string | null;
-  label?: string | null;
   sort_order?: number | null;
 };
 
@@ -51,7 +26,6 @@ type RawTraitOptionRow = {
   id: string;
   trait_type_id: string;
   slug: string;
-  name?: string | null;
   label?: string | null;
   sort_order?: number | null;
   is_deprecated?: boolean | null;
@@ -67,7 +41,7 @@ type RawTraitBindingRow = {
   min_required?: number | null;
   ui_group_slug?: string | null;
   ui_hint?: string | null;
-  sort_order?: number | null;
+  quick_filter_order?: number | null;
 };
 
 function normalizeTier(value: unknown): 1 | 2 | 3 {
@@ -109,42 +83,124 @@ function compareSortOrder(
   return a - b;
 }
 
-export async function getIdeaRegistrySnapshot(): Promise<IdeaRegistrySnapshot> {
-  const supabase = await createSupabaseServerClient();
-
-  const { data: traitTypeRows, error: traitTypeError } = await supabase
+async function getTraitTypeRows(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+): Promise<RawTraitTypeRow[]> {
+  const withNameAndSort = await supabase
     .from("trait_types")
-    .select("id, slug, name, label, sort_order")
+    .select("id, slug, name, sort_order")
     .order("sort_order", { ascending: true })
     .order("slug", { ascending: true });
 
-  if (traitTypeError) {
-    throw new Error(`Failed to load trait types: ${traitTypeError.message}`);
+  if (!withNameAndSort.error) {
+    return (withNameAndSort.data ?? []) as RawTraitTypeRow[];
   }
 
-  const traitTypes: RegistryTraitType[] = (traitTypeRows ?? []).map(
+  const withName = await supabase
+    .from("trait_types")
+    .select("id, slug, name")
+    .order("slug", { ascending: true });
+
+  if (!withName.error) {
+    return (withName.data ?? []) as RawTraitTypeRow[];
+  }
+
+  const withoutSort = await supabase
+    .from("trait_types")
+    .select("id, slug")
+    .order("slug", { ascending: true });
+
+  if (withoutSort.error) {
+    throw new Error(`Failed to load trait types: ${withoutSort.error.message}`);
+  }
+
+  return (withoutSort.data ?? []) as RawTraitTypeRow[];
+}
+
+async function getTraitOptionRows(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  traitTypeIds: string[],
+): Promise<RawTraitOptionRow[]> {
+  const withSortAndFlags = await supabase
+    .from("trait_options")
+    .select("id, trait_type_id, slug, label, sort_order, is_deprecated")
+    .in("trait_type_id", traitTypeIds)
+    .order("sort_order", { ascending: true })
+    .order("slug", { ascending: true });
+
+  if (!withSortAndFlags.error) {
+    return (withSortAndFlags.data ?? []) as RawTraitOptionRow[];
+  }
+
+  const withLabelAndFlags = await supabase
+    .from("trait_options")
+    .select("id, trait_type_id, slug, label, is_deprecated")
+    .in("trait_type_id", traitTypeIds)
+    .order("slug", { ascending: true });
+
+  if (!withLabelAndFlags.error) {
+    return (withLabelAndFlags.data ?? []) as RawTraitOptionRow[];
+  }
+
+  const minimal = await supabase
+    .from("trait_options")
+    .select("id, trait_type_id, slug")
+    .in("trait_type_id", traitTypeIds)
+    .order("slug", { ascending: true });
+
+  if (minimal.error) {
+    throw new Error(`Failed to load trait options: ${minimal.error.message}`);
+  }
+
+  return (minimal.data ?? []) as RawTraitOptionRow[];
+}
+
+async function getIdeaBindingRows(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+): Promise<RawTraitBindingRow[]> {
+  const withQuickOrder = await supabase
+    .from("trait_bindings")
+    .select(
+      "id, context, trait_type_id, tier, select_mode, is_required, min_required, ui_group_slug, ui_hint, quick_filter_order",
+    )
+    .eq("context", "idea");
+
+  if (!withQuickOrder.error) {
+    return (withQuickOrder.data ?? []) as RawTraitBindingRow[];
+  }
+
+  const withoutQuickOrder = await supabase
+    .from("trait_bindings")
+    .select(
+      "id, context, trait_type_id, tier, select_mode, is_required, min_required, ui_group_slug, ui_hint",
+    )
+    .eq("context", "idea");
+
+  if (withoutQuickOrder.error) {
+    throw new Error(
+      `Failed to load trait bindings: ${withoutQuickOrder.error.message}`,
+    );
+  }
+
+  return (withoutQuickOrder.data ?? []) as RawTraitBindingRow[];
+}
+
+export async function getIdeaRegistrySnapshot(): Promise<IdeaRegistrySnapshot> {
+  const supabase = await createSupabaseServerClient();
+  const traitTypeRows = await getTraitTypeRows(supabase);
+
+  const traitTypes: RegistryTraitType[] = traitTypeRows.map(
     (row: RawTraitTypeRow) => ({
       id: row.id,
       slug: row.slug,
-      label: (row.label ?? row.name ?? row.slug).trim(),
+      label: (row.name ?? row.slug).trim(),
       sortOrder: row.sort_order ?? null,
     }),
   );
 
   const traitTypeById = new Map(traitTypes.map((type) => [type.id, type]));
 
-  const { data: rawBindingRows, error: bindingError } = await supabase
-    .from("trait_bindings")
-    .select(
-      "id, context, trait_type_id, tier, select_mode, is_required, min_required, ui_group_slug, ui_hint, sort_order",
-    )
-    .eq("context", "idea");
-
-  if (bindingError) {
-    throw new Error(`Failed to load trait bindings: ${bindingError.message}`);
-  }
-
-  const bindingRows = (rawBindingRows ?? []) as RawTraitBindingRow[];
+  const bindingRows = await getIdeaBindingRows(supabase);
   const boundTraitTypeIds = Array.from(
     new Set(bindingRows.map((row) => row.trait_type_id)),
   );
@@ -152,25 +208,16 @@ export async function getIdeaRegistrySnapshot(): Promise<IdeaRegistrySnapshot> {
   let optionsByTypeId = new Map<string, RegistryTraitOption[]>();
 
   if (boundTraitTypeIds.length > 0) {
-    const { data: rawOptionRows, error: optionError } = await supabase
-      .from("trait_options")
-      .select("id, trait_type_id, slug, name, label, sort_order, is_deprecated")
-      .in("trait_type_id", boundTraitTypeIds)
-      .order("sort_order", { ascending: true })
-      .order("slug", { ascending: true });
-
-    if (optionError) {
-      throw new Error(`Failed to load trait options: ${optionError.message}`);
-    }
+    const rawOptionRows = await getTraitOptionRows(supabase, boundTraitTypeIds);
 
     optionsByTypeId = new Map<string, RegistryTraitOption[]>();
 
-    for (const row of (rawOptionRows ?? []) as RawTraitOptionRow[]) {
+    for (const row of rawOptionRows) {
       const option: RegistryTraitOption = {
         id: row.id,
         traitTypeId: row.trait_type_id,
         slug: row.slug,
-        label: (row.label ?? row.name ?? row.slug).trim(),
+        label: (row.label ?? row.slug).trim(),
         sortOrder: row.sort_order ?? null,
         isDeprecated: Boolean(row.is_deprecated),
       };
@@ -210,7 +257,7 @@ export async function getIdeaRegistrySnapshot(): Promise<IdeaRegistrySnapshot> {
       minRequired: Math.max(1, row.min_required ?? 1),
       uiGroupSlug: row.ui_group_slug ?? null,
       uiHint: row.ui_hint ?? null,
-      sortOrder: row.sort_order ?? null,
+      sortOrder: row.quick_filter_order ?? null,
       options: optionsByTypeId.get(row.trait_type_id) ?? [],
     });
   }
