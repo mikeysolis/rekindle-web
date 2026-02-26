@@ -2,18 +2,29 @@
   "name": "rekindle-web",
   "version": "0.1.0",
   "private": true,
+  "volta": {
+    "node": "20.20.0",
+    "npm": "10.9.0"
+  },
   "scripts": {
     "predev": "node scripts/sync-well-known.mjs",
     "prebuild": "node scripts/sync-well-known.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "supabase:start": "supabase start --workdir ./db",
+    "supabase:stop": "supabase stop --workdir ./db",
+    "supabase:reset": "supabase db reset --workdir ./db",
+    "types:gen:local": "supabase gen types typescript --local --schema public > lib/database/types.gen.ts --workdir ./db"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.8.0",
+    "@supabase/supabase-js": "^2.97.0",
     "next": "16.1.6",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
