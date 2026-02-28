@@ -7,6 +7,10 @@ Current CLI commands:
 - `list-sources`
 - `run-source <source_key>`
 
+Source fixture tests:
+
+- `npm run pipeline:test:rak`
+
 Deliberately excluded from CLI:
 
 - automatic sync-to-drafts

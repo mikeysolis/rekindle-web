@@ -146,10 +146,20 @@ Gate for Epic 0:
 Dependencies: ING-002
 
 Checklist:
-- [ ] Refine discovery selectors/patterns to prioritize actionable idea content.
-- [ ] Enforce canonical per-item `source_url` capture (no list-page URL reuse).
-- [ ] Add source-specific cleaning heuristics to reduce article-style noise.
-- [ ] Add extractor fixture tests for positive and negative samples.
+- [x] Refine discovery selectors/patterns to prioritize actionable idea content.
+- [x] Enforce canonical per-item `source_url` capture (no list-page URL reuse).
+- [x] Add source-specific cleaning heuristics to reduce article-style noise.
+- [x] Add extractor fixture tests for positive and negative samples.
+
+Verification note:
+1. Refactored RAK parsing into `pipeline/src/sources/rak/parser.ts` with canonical URL handling and actionable-line extraction heuristics.
+2. Added RAK fixtures and tests:
+   - `pipeline/src/sources/rak/fixtures/listing_page.html`
+   - `pipeline/src/sources/rak/fixtures/detail_page_actionable.html`
+   - `pipeline/src/sources/rak/fixtures/detail_page_noise.html`
+   - `pipeline/src/sources/rak/parser.test.ts`
+3. Verified with `npm run pipeline:test:rak` on 2026-02-28 (4/4 tests passing).
+4. Live KPI check (`source_url` detail-page rate >= 95%) remains to validate from real run telemetry.
 
 Acceptance criteria:
 1. `source_url` points to the actual item page for >= 95% of new candidates.

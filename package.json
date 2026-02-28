@@ -16,6 +16,7 @@
     "start": "next start",
     "lint": "eslint",
     "pipeline:build": "tsc -p ./pipeline/tsconfig.json",
+    "pipeline:test:rak": "npm run pipeline:build --silent && node --test ./pipeline/dist/sources/rak/parser.test.js",
     "pipeline:list-sources": "npm run pipeline:build --silent && node ./pipeline/dist/index.js list-sources",
     "pipeline:run-source": "node scripts/validate-env.mjs --runtime pipeline && npm run pipeline:build --silent && node ./pipeline/dist/index.js run-source",
     "supabase:start": "supabase start --workdir ./db",
