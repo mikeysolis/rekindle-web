@@ -82,6 +82,19 @@ Ingestion DB:
 npm run ingest:supabase:start
 ```
 
+Preferred ingestion cleanup SQL:
+
+```bash
+npm run ingest:cleanup:sql
+```
+
+Guarded reset commands (require explicit flags + environment confirmation):
+
+```bash
+INGEST_ENVIRONMENT=local npm run ingest:supabase:reset -- --allow-local-reset --environment local --confirm reset-local --dry-run
+INGEST_ENVIRONMENT=staging npm run ingest:supabase:reset:linked -- --allow-linked-reset --environment staging --confirm reset-staging --dry-run
+```
+
 ## Workflow Guardrail
 
 Scraper output is reviewed in Studio before drafting:

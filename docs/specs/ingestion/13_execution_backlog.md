@@ -120,9 +120,18 @@ Acceptance criteria:
 Dependencies: ING-001
 
 Checklist:
-- [ ] Update runbook/CLI docs to require explicit confirmation for linked remote reset.
-- [ ] Add ingestion-only cleanup SQL path as default operational path.
-- [ ] Add environment verification step before any full reset command.
+- [x] Update runbook/CLI docs to require explicit confirmation for linked remote reset.
+- [x] Add ingestion-only cleanup SQL path as default operational path.
+- [x] Add environment verification step before any full reset command.
+
+Verification note:
+1. Guarded reset CLI wrapper added: `scripts/ingest-db-ops.mjs`.
+2. Cleanup SQL default path added: `ingestion/supabase/sql/cleanup_ingestion_tables.sql`.
+3. Reset commands now require explicit override flags, confirm token, and `INGEST_ENVIRONMENT` match.
+4. Ops runbook added: `15_operations_runbook.md`.
+5. Verified on 2026-02-28:
+   - `npm run ingest:supabase:reset:linked` is blocked by default.
+   - dry-run resets succeed only with explicit guard flags and matching environment confirmation.
 
 Acceptance criteria:
 1. Routine cleanup path never requires full DB reset.

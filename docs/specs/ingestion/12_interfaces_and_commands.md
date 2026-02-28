@@ -91,29 +91,25 @@ Ingestion DB migrations:
 
 Ingestion DB local reset:
 
-1. `supabase db reset --workdir ./ingestion`
+1. `INGEST_ENVIRONMENT=local npm run ingest:supabase:reset -- --allow-local-reset --environment local --confirm reset-local`
 
 Ingestion remote reset (linked project, full reset):
 
-1. `supabase db reset --linked --workdir ./ingestion --no-seed`
+1. `INGEST_ENVIRONMENT=staging npm run ingest:supabase:reset:linked -- --allow-linked-reset --environment staging --confirm reset-staging`
 
 Safety rule:
 
 1. Never run linked remote reset against production projects.
 2. Require explicit human approval and environment confirmation before any remote reset.
-3. Prefer ingestion-table truncate for routine cleanup instead of full DB reset.
+3. Require `INGEST_ENVIRONMENT` to match `--environment` before any full reset.
+4. Prefer ingestion-table truncate for routine cleanup instead of full DB reset.
+5. Use `--dry-run` first for reset commands.
 
 Routine ingestion-only cleanup (preferred):
 
-```sql
-truncate table
-  public.ingest_sync_log,
-  public.ingest_candidate_traits,
-  public.ingest_candidates,
-  public.ingest_pages,
-  public.ingest_runs
-cascade;
-```
+1. Print cleanup SQL:
+   - `npm run ingest:cleanup:sql`
+2. Run SQL from `ingestion/supabase/sql/cleanup_ingestion_tables.sql` against ingestion DB.
 
 ## 8) Interface Versioning
 

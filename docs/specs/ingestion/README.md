@@ -28,6 +28,7 @@ It covers:
 12. `12_interfaces_and_commands.md`
 13. `13_execution_backlog.md`
 14. `14_environment_and_secrets_contract.md`
+15. `15_operations_runbook.md`
 
 ## Scope Boundaries
 

@@ -23,7 +23,9 @@
     "supabase:reset": "supabase db reset --workdir ./db",
     "ingest:supabase:start": "supabase start --workdir ./ingestion",
     "ingest:supabase:stop": "supabase stop --workdir ./ingestion",
-    "ingest:supabase:reset": "supabase db reset --workdir ./ingestion",
+    "ingest:supabase:reset": "node scripts/ingest-db-ops.mjs reset-local",
+    "ingest:supabase:reset:linked": "node scripts/ingest-db-ops.mjs reset-linked",
+    "ingest:cleanup:sql": "node scripts/ingest-db-ops.mjs cleanup-sql",
     "types:gen:local": "supabase gen types typescript --local --schema public > lib/database/types.gen.ts --workdir ./db"
   },
   "dependencies": {

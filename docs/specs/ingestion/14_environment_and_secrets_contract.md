@@ -30,6 +30,7 @@ Optional:
 3. `INGEST_SNAPSHOT_BUCKET`
 4. `INGEST_LOG_LEVEL`
 5. `INGEST_DEFAULT_LOCALE`
+6. `INGEST_ENVIRONMENT` (`local|staging|...`) required for guarded reset operations
 
 ## 3) Canonical Namespace Rules
 
