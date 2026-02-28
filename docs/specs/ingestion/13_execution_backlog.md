@@ -104,9 +104,13 @@ Acceptance criteria:
 Dependencies: ING-001
 
 Checklist:
-- [ ] Create source registry storage contract matching `05_source_intelligence_and_strategy.md`.
-- [ ] Implement lifecycle state transition guardrails.
-- [ ] Add immutable audit events for every state/config mutation.
+- [x] Create source registry storage contract matching `05_source_intelligence_and_strategy.md`.
+- [x] Implement lifecycle state transition guardrails.
+- [x] Add immutable audit events for every state/config mutation.
+
+Verification note:
+1. Linked ingestion project migration apply verified on 2026-02-28 via `supabase db push --linked --workdir ./ingestion` (applied `0003_ingestion_source_registry.sql`).
+2. Linked schema lint passed on 2026-02-28 via `supabase db lint --linked --workdir ./ingestion --schema public --fail-on error`.
 
 Acceptance criteria:
 1. Invalid lifecycle transitions are rejected.

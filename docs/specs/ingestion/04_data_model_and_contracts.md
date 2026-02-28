@@ -20,6 +20,8 @@ Current canonical ingestion tables:
 3. `ingest_candidates`
 4. `ingest_candidate_traits`
 5. `ingest_sync_log`
+6. `ingest_source_registry`
+7. `ingest_source_registry_audit_events`
 
 ## 3) App Tables Involved in Promotion
 
