@@ -88,9 +88,13 @@ Acceptance criteria:
 Dependencies: ING-001
 
 Checklist:
-- [ ] Add migrations for `ingest_editor_labels`, `ingest_experiments`, `ingest_experiment_metrics`, `ingest_tuning_changes`.
-- [ ] Add indexes and FK constraints defined in `04_data_model_and_contracts.md`.
-- [ ] Add rollback/recovery notes in migration comments or runbook.
+- [x] Add migrations for `ingest_editor_labels`, `ingest_experiments`, `ingest_experiment_metrics`, `ingest_tuning_changes`.
+- [x] Add indexes and FK constraints defined in `04_data_model_and_contracts.md`.
+- [x] Add rollback/recovery notes in migration comments or runbook.
+
+Verification note:
+1. Linked ingestion project migration apply verified on 2026-02-28 via `supabase db push --linked --workdir ./ingestion` (applied `0002_ingestion_learning_analytics.sql`).
+2. Optional local verification command (if needed): `supabase db reset --workdir ./ingestion --no-seed`.
 
 Acceptance criteria:
 1. Migrations apply cleanly to local and linked staging.
