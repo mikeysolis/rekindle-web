@@ -55,6 +55,17 @@ export type IngestionCandidateDetail = {
   candidate: IngestionCandidate;
   traits: IngestionCandidateTrait[];
   syncLog: IngestionSyncLogEntry[];
+  duplicateHints: IngestionDuplicateHint[];
+};
+
+export type IngestionDuplicateHint = {
+  candidateId: string;
+  sourceUrl: string;
+  title: string;
+  status: IngestCandidateStatus;
+  similarityScore: number;
+  reasons: string[];
+  updatedAt: string | null;
 };
 
 export type IngestionListFilters = {
@@ -105,6 +116,15 @@ type RawSyncLogRow = {
   status: "pending" | "success" | "failed";
   synced_at: string | null;
   error_text: string | null;
+};
+
+type RawDuplicateHintRow = {
+  id: string;
+  source_url: string;
+  title: string;
+  candidate_key: string;
+  status: string | null;
+  updated_at: string | null;
 };
 
 function parseCandidateStatus(value: string | null): IngestCandidateStatus {
@@ -175,6 +195,96 @@ function mapSyncLog(row: RawSyncLogRow): IngestionSyncLogEntry {
     syncedAt: row.synced_at,
     errorText: row.error_text,
   };
+}
+
+function normalizeForSimilarity(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function tokenizeForSimilarity(value: string): string[] {
+  return normalizeForSimilarity(value).split(" ").filter(Boolean);
+}
+
+function jaccardSimilarity(left: string[], right: string[]): number {
+  if (left.length === 0 || right.length === 0) {
+    return 0;
+  }
+
+  const leftSet = new Set(left);
+  const rightSet = new Set(right);
+  let intersectionCount = 0;
+
+  for (const value of leftSet) {
+    if (rightSet.has(value)) {
+      intersectionCount += 1;
+    }
+  }
+
+  const unionCount = new Set([...leftSet, ...rightSet]).size;
+  return unionCount === 0 ? 0 : intersectionCount / unionCount;
+}
+
+function normalizeComparableUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    parsed.hash = "";
+    parsed.search = "";
+    parsed.pathname =
+      parsed.pathname.length > 1 && parsed.pathname.endsWith("/")
+        ? parsed.pathname.slice(0, -1)
+        : parsed.pathname;
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
+function computeDuplicateHints(params: {
+  candidate: IngestionCandidate;
+  rows: RawDuplicateHintRow[];
+}): IngestionDuplicateHint[] {
+  const sourceUrl = normalizeComparableUrl(params.candidate.sourceUrl);
+  const candidateKey = params.candidate.candidateKey;
+  const baseTitleTokens = tokenizeForSimilarity(params.candidate.title);
+
+  const scored = params.rows
+    .map((row) => {
+      const reasons: string[] = [];
+      let score = 0;
+
+      if (row.candidate_key === candidateKey) {
+        reasons.push("same_candidate_key");
+        score = Math.max(score, 1);
+      }
+
+      if (normalizeComparableUrl(row.source_url) === sourceUrl) {
+        reasons.push("same_source_url");
+        score = Math.max(score, 0.98);
+      }
+
+      const titleSimilarity = jaccardSimilarity(baseTitleTokens, tokenizeForSimilarity(row.title));
+      if (titleSimilarity >= 0.7) {
+        reasons.push("high_title_similarity");
+        score = Math.max(score, titleSimilarity);
+      }
+
+      if (reasons.length === 0 && titleSimilarity < 0.66) {
+        return null;
+      }
+
+      return {
+        candidateId: row.id,
+        sourceUrl: row.source_url,
+        title: row.title,
+        status: parseCandidateStatus(row.status),
+        similarityScore: Number(score.toFixed(4)),
+        reasons,
+        updatedAt: row.updated_at,
+      } satisfies IngestionDuplicateHint;
+    })
+    .filter((value): value is IngestionDuplicateHint => Boolean(value));
+
+  return scored.sort((left, right) => right.similarityScore - left.similarityScore).slice(0, 5);
 }
 
 export async function listIngestionSourceKeys(): Promise<string[]> {
@@ -279,10 +389,30 @@ export async function getIngestionCandidateDetail(
     throw new Error(`Failed to load ingestion sync log: ${syncError.message}`);
   }
 
+  const { data: duplicateRows, error: duplicateError } = await ingest
+    .from("ingest_candidates")
+    .select("id, source_url, title, candidate_key, status, updated_at")
+    .eq("source_key", candidateRow.source_key)
+    .neq("id", candidateId)
+    .in("status", ["normalized", "curated", "pushed_to_studio"])
+    .order("updated_at", { ascending: false })
+    .limit(250);
+
+  if (duplicateError) {
+    throw new Error(`Failed to load duplicate hints: ${duplicateError.message}`);
+  }
+
+  const mappedCandidate = mapCandidate(candidateRow as RawCandidateRow);
+  const duplicateHints = computeDuplicateHints({
+    candidate: mappedCandidate,
+    rows: (duplicateRows ?? []) as RawDuplicateHintRow[],
+  });
+
   return {
-    candidate: mapCandidate(candidateRow as RawCandidateRow),
+    candidate: mappedCandidate,
     traits: (traitRows ?? []).map((row) => mapTrait(row as RawTraitRow)),
     syncLog: (syncRows ?? []).map((row) => mapSyncLog(row as RawSyncLogRow)),
+    duplicateHints,
   };
 }
 

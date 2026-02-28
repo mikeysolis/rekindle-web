@@ -1,6 +1,11 @@
 import type { GenericSupabaseClient } from "../clients/supabase.js"
 import { buildCandidateKey } from "../core/hashing.js"
 import { normalizeOptionalText } from "../core/normalize.js"
+import {
+  DEFAULT_QUALITY_THRESHOLD,
+  QUALITY_RULE_VERSION,
+  evaluateCandidateQuality,
+} from "../core/quality.js"
 import type { ExtractedCandidate, TraitHint } from "../core/types.js"
 import type { Logger } from "../core/logger.js"
 
@@ -150,6 +155,29 @@ export class DurableStoreRepository {
     if (candidates.length === 0) return []
 
     const traitByKey = new Map<string, TraitHint[]>()
+    const existingKeys = candidates.map((candidate) =>
+      buildCandidateKey({
+        sourceKey: candidate.sourceKey,
+        sourceUrl: candidate.sourceUrl,
+        title: candidate.title,
+        description: candidate.description,
+      })
+    )
+    const existingRowByKey = new Map<string, { id: string }>()
+
+    const { data: existingRows, error: existingError } = await this.client
+      .from("ingest_candidates")
+      .select("id, candidate_key")
+      .in("candidate_key", existingKeys)
+
+    if (existingError) {
+      throw new Error(`Failed to check existing candidate keys: ${existingError.message}`)
+    }
+
+    for (const row of (existingRows ?? []) as Array<{ id: string; candidate_key: string }>) {
+      existingRowByKey.set(row.candidate_key, { id: row.id })
+    }
+
     const payload = candidates.map((candidate) => {
       const candidateKey = buildCandidateKey({
         sourceKey: candidate.sourceKey,
@@ -157,7 +185,15 @@ export class DurableStoreRepository {
         title: candidate.title,
         description: candidate.description,
       })
+      const quality = evaluateCandidateQuality(candidate, DEFAULT_QUALITY_THRESHOLD)
+      const duplicateSignal = existingRowByKey.has(candidateKey)
+      const qualityFlags = duplicateSignal
+        ? [...quality.flags, "duplicate_candidate_key_existing"]
+        : quality.flags
+      const qualityPassed = quality.passed && !duplicateSignal
+
       traitByKey.set(candidateKey, candidate.traits ?? [])
+
       return {
         run_id: runId,
         page_id: pageId,
@@ -168,8 +204,19 @@ export class DurableStoreRepository {
         reason_snippet: normalizeOptionalText(candidate.reasonSnippet),
         raw_excerpt: normalizeOptionalText(candidate.rawExcerpt),
         candidate_key: candidateKey,
-        status: "normalized",
-        meta_json: candidate.meta ?? {},
+        status: qualityPassed ? "curated" : "normalized",
+        meta_json: {
+          ...(candidate.meta ?? {}),
+          quality: {
+            version: QUALITY_RULE_VERSION,
+            score: quality.score,
+            threshold: quality.threshold,
+            passed: qualityPassed,
+            flags: qualityFlags,
+            filtered_from_default_inbox: !qualityPassed,
+          },
+          duplicate_candidate_key_existing: duplicateSignal,
+        },
       }
     })
 

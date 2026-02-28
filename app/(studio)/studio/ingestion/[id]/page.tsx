@@ -42,6 +42,35 @@ function serializeMeta(value: Record<string, unknown>): string {
   return JSON.stringify(value, null, 2);
 }
 
+function readQualityMeta(meta: Record<string, unknown>): {
+  version: string;
+  score: number | null;
+  threshold: number | null;
+  passed: boolean | null;
+  flags: string[];
+} | null {
+  const value = meta.quality;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const quality = value as Record<string, unknown>;
+  const score = typeof quality.score === "number" ? quality.score : null;
+  const threshold = typeof quality.threshold === "number" ? quality.threshold : null;
+  const passed = typeof quality.passed === "boolean" ? quality.passed : null;
+  const flags = Array.isArray(quality.flags)
+    ? quality.flags.map((entry) => String(entry))
+    : [];
+
+  return {
+    version: String(quality.version ?? "unknown"),
+    score,
+    threshold,
+    passed,
+    flags,
+  };
+}
+
 export default async function StudioIngestionDetailPage({
   params,
   searchParams,
@@ -54,6 +83,7 @@ export default async function StudioIngestionDetailPage({
   if (!detail) {
     notFound();
   }
+  const qualityMeta = readQualityMeta(detail.candidate.metaJson);
 
   const canEdit = hasStudioRoleAtLeast(studioUser.role, "editor");
   const latestPromotedDraftId =
@@ -287,6 +317,73 @@ export default async function StudioIngestionDetailPage({
         </div>
 
         <section className="grid gap-4 lg:grid-cols-2">
+          <div className="rounded border border-zinc-300 bg-white p-4">
+            <h3 className="text-lg font-semibold">Quality Assessment</h3>
+            {!qualityMeta ? (
+              <p className="mt-2 text-sm text-zinc-500">No machine quality metadata.</p>
+            ) : (
+              <div className="mt-2 space-y-2 text-sm">
+                <p>
+                  <span className="font-medium">Rule version:</span> {qualityMeta.version}
+                </p>
+                <p>
+                  <span className="font-medium">Score:</span>{" "}
+                  {qualityMeta.score !== null ? qualityMeta.score.toFixed(3) : "-"}{" "}
+                  {qualityMeta.threshold !== null && (
+                    <span className="text-zinc-600">
+                      (threshold {qualityMeta.threshold.toFixed(3)})
+                    </span>
+                  )}
+                </p>
+                <p>
+                  <span className="font-medium">Result:</span>{" "}
+                  {qualityMeta.passed === null ? "-" : qualityMeta.passed ? "passed" : "filtered"}
+                </p>
+                <div>
+                  <p className="font-medium">Flags</p>
+                  {qualityMeta.flags.length === 0 ? (
+                    <p className="text-zinc-500">No quality flags.</p>
+                  ) : (
+                    <ul className="mt-1 list-disc pl-5 text-zinc-700">
+                      {qualityMeta.flags.map((flag) => (
+                        <li key={flag} className="font-mono text-xs">
+                          {flag}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="rounded border border-zinc-300 bg-white p-4">
+            <h3 className="text-lg font-semibold">Duplicate Hints</h3>
+            {detail.duplicateHints.length === 0 ? (
+              <p className="mt-2 text-sm text-zinc-500">No likely duplicates found.</p>
+            ) : (
+              <ul className="mt-2 space-y-2 text-sm">
+                {detail.duplicateHints.map((hint) => (
+                  <li key={hint.candidateId} className="rounded border border-zinc-200 bg-zinc-50 p-2">
+                    <p className="font-medium">{hint.title}</p>
+                    <p className="text-xs text-zinc-600">
+                      similarity: {hint.similarityScore.toFixed(3)} • status: {hint.status}
+                    </p>
+                    <p className="mt-1 text-xs text-zinc-600">
+                      reasons: {hint.reasons.join(", ")}
+                    </p>
+                    <Link
+                      href={`/studio/ingestion/${hint.candidateId}`}
+                      className="mt-2 inline-flex rounded border border-zinc-300 px-2 py-1 text-xs hover:border-zinc-600"
+                    >
+                      Open candidate
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
           <div className="rounded border border-zinc-300 bg-white p-4">
             <h3 className="text-lg font-semibold">Trait Hints</h3>
             {detail.traits.length === 0 ? (

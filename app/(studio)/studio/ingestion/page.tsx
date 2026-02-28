@@ -43,7 +43,7 @@ export default async function StudioIngestionPage({ searchParams }: IngestionPag
   const status: IngestCandidateStatus | "all" =
     rawStatus && INGEST_CANDIDATE_STATUSES.includes(rawStatus as IngestCandidateStatus)
       ? (rawStatus as IngestCandidateStatus)
-      : "all";
+      : "curated";
   const source = (params.source ?? "").trim();
   const query = (params.q ?? "").trim();
 
@@ -64,6 +64,10 @@ export default async function StudioIngestionPage({ searchParams }: IngestionPag
           <h2 className="text-2xl font-semibold">Ingestion Inbox</h2>
           <p className="text-sm text-zinc-600">
             Review scraped candidates and promote only the rows that are editorially clean.
+          </p>
+          <p className="text-xs text-zinc-500">
+            Default filter is <span className="font-medium">Curated</span>; switch to{" "}
+            <span className="font-medium">All statuses</span> to inspect machine-filtered rows.
           </p>
         </div>
 

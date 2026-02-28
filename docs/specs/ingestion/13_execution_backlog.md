@@ -169,9 +169,18 @@ Acceptance criteria:
 Dependencies: ING-010
 
 Checklist:
-- [ ] Add deterministic filters for non-idea content.
-- [ ] Add duplicate candidate hints based on candidate key/similarity.
-- [ ] Add minimum quality threshold with explainable rejection flags.
+- [x] Add deterministic filters for non-idea content.
+- [x] Add duplicate candidate hints based on candidate key/similarity.
+- [x] Add minimum quality threshold with explainable rejection flags.
+
+Verification note:
+1. Added deterministic quality rules in `pipeline/src/core/quality.ts`.
+2. Pipeline now writes machine quality metadata (`quality.version`, `score`, `threshold`, `passed`, `flags`) into `meta_json` and sets status to `curated` (pass) or `normalized` (filtered).
+3. Studio candidate detail now exposes quality metadata and duplicate hints.
+4. Inbox default filter updated to `curated` to down-rank machine-filtered rows.
+5. Added tests:
+   - `pipeline/src/core/quality.test.ts`
+   - `pipeline/src/sources/rak/parser.test.ts` (existing fixture suite)
 
 Acceptance criteria:
 1. Noise candidates are reduced without lowering valid idea yield.

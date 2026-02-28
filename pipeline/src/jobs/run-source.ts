@@ -13,6 +13,8 @@ export interface RunSourceResult {
   extractedPages: number
   failedPages: number
   candidateCount: number
+  curatedCandidateCount: number
+  qualityFilteredCandidateCount: number
   snapshotLocation: string
 }
 
@@ -39,6 +41,8 @@ export async function runSource(sourceKey: string): Promise<RunSourceResult> {
   let extractedPages = 0
   let failedPages = 0
   let candidateCount = 0
+  let curatedCandidateCount = 0
+  let qualityFilteredCandidateCount = 0
 
   try {
     const discovered = await source.discover(sourceContext)
@@ -56,6 +60,10 @@ export async function runSource(sourceKey: string): Promise<RunSourceResult> {
         await durable.markPageExtracted(page.id)
         extractedPages += 1
         candidateCount += storedCandidates.length
+        curatedCandidateCount += storedCandidates.filter((candidate) => candidate.status === "curated").length
+        qualityFilteredCandidateCount += storedCandidates.filter(
+          (candidate) => candidate.status === "normalized"
+        ).length
       } catch (error) {
         failedPages += 1
         const message = error instanceof Error ? error.message : String(error)
@@ -81,6 +89,8 @@ export async function runSource(sourceKey: string): Promise<RunSourceResult> {
       extracted_pages: extractedPages,
       failed_pages: failedPages,
       candidates: runCandidates.length,
+      curated_candidates: curatedCandidateCount,
+      quality_filtered_candidates: qualityFilteredCandidateCount,
       snapshot_location: snapshotLocation,
     })
 
@@ -91,6 +101,8 @@ export async function runSource(sourceKey: string): Promise<RunSourceResult> {
       extractedPages,
       failedPages,
       candidateCount: runCandidates.length,
+      curatedCandidateCount,
+      qualityFilteredCandidateCount,
       snapshotLocation,
     }
   } catch (error) {
@@ -100,6 +112,8 @@ export async function runSource(sourceKey: string): Promise<RunSourceResult> {
       extracted_pages: extractedPages,
       failed_pages: failedPages,
       candidates: candidateCount,
+      curated_candidates: curatedCandidateCount,
+      quality_filtered_candidates: qualityFilteredCandidateCount,
       error: message,
     })
     throw error

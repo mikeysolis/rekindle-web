@@ -10,6 +10,7 @@ Current CLI commands:
 Source fixture tests:
 
 - `npm run pipeline:test:rak`
+- `npm run pipeline:test:quality`
 
 Deliberately excluded from CLI:
 
