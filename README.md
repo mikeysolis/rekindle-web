@@ -1,36 +1,82 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Rekindle Web (Studio + Ingestion Inbox)
 
-## Getting Started
+This repo contains:
 
-First, run the development server:
+- The Next.js Studio web app (`/studio/*`)
+- A vendored ingestion pipeline scaffold (`/pipeline`)
+- Ingestion Supabase local config and migrations (`/ingestion`)
+
+## Environment
+
+Set app auth env vars (existing Studio):
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+
+Set ingestion env vars (server-only, do not prefix with `NEXT_PUBLIC_`):
+
+- `INGEST_SUPABASE_URL`
+- `INGEST_SUPABASE_SERVICE_ROLE_KEY`
+- `INGEST_SNAPSHOT_MODE` (`local` or `supabase`)
+- `INGEST_SNAPSHOT_LOCAL_DIR`
+- `INGEST_SNAPSHOT_BUCKET`
+- `INGEST_LOG_LEVEL`
+- `INGEST_DEFAULT_LOCALE`
+
+See `pipeline/env.example` for the ingestion sample.
+
+## Studio
+
+Run Studio:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Primary editorial routes:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- `/studio/ingestion` - ingestion inbox (review/reject/needs work/promote)
+- `/studio/drafts` - draft editing and publish gate
+- `/studio/export` - CSV export for publishable drafts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Ingestion Pipeline (scaffold)
 
-## Learn More
+Build pipeline code:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm run pipeline:build
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+List available sources:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+npm run pipeline:list-sources
+```
 
-## Deploy on Vercel
+Run one source:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+npm run pipeline:run-source -- rak
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Local Supabase Workdirs
+
+App DB:
+
+```bash
+npm run supabase:start
+```
+
+Ingestion DB:
+
+```bash
+npm run ingest:supabase:start
+```
+
+## Workflow Guardrail
+
+Scraper output is reviewed in Studio before drafting:
+
+- No automatic draft creation from ingestion jobs
+- No automatic publishing from ingestion output
+- Promotion to draft is manual via Studio action

@@ -13,9 +13,15 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "pipeline:build": "tsc -p ./pipeline/tsconfig.json",
+    "pipeline:list-sources": "npm run pipeline:build --silent && node ./pipeline/dist/index.js list-sources",
+    "pipeline:run-source": "npm run pipeline:build --silent && node ./pipeline/dist/index.js run-source",
     "supabase:start": "supabase start --workdir ./db",
     "supabase:stop": "supabase stop --workdir ./db",
     "supabase:reset": "supabase db reset --workdir ./db",
+    "ingest:supabase:start": "supabase start --workdir ./ingestion",
+    "ingest:supabase:stop": "supabase stop --workdir ./ingestion",
+    "ingest:supabase:reset": "supabase db reset --workdir ./ingestion",
     "types:gen:local": "supabase gen types typescript --local --schema public > lib/database/types.gen.ts --workdir ./db"
   },
   "dependencies": {

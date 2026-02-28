@@ -20,6 +20,8 @@
 
 # production
 /build
+/pipeline/dist
+/pipeline/.env
 
 # misc
 .DS_Store

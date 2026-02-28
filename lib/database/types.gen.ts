@@ -354,6 +354,7 @@ export type Database = {
           editorial_note: string | null
           exported_at: string | null
           id: string
+          ingest_candidate_id: string | null
           max_minutes: number | null
           min_minutes: number | null
           reason_snippet: string | null
@@ -375,6 +376,7 @@ export type Database = {
           editorial_note?: string | null
           exported_at?: string | null
           id?: string
+          ingest_candidate_id?: string | null
           max_minutes?: number | null
           min_minutes?: number | null
           reason_snippet?: string | null
@@ -396,6 +398,7 @@ export type Database = {
           editorial_note?: string | null
           exported_at?: string | null
           id?: string
+          ingest_candidate_id?: string | null
           max_minutes?: number | null
           min_minutes?: number | null
           reason_snippet?: string | null
