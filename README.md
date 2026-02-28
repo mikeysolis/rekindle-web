@@ -23,7 +23,16 @@ Set ingestion env vars (server-only, do not prefix with `NEXT_PUBLIC_`):
 - `INGEST_LOG_LEVEL`
 - `INGEST_DEFAULT_LOCALE`
 
-See `pipeline/env.example` for the ingestion sample.
+Canonical contract:
+
+- `docs/specs/ingestion/14_environment_and_secrets_contract.md`
+
+Forbidden env vars:
+
+- `NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY`
+- `INGEST_SUPABASE_KEY`
+
+See `pipeline/env.example` for ingestion env examples.
 
 ## Studio
 

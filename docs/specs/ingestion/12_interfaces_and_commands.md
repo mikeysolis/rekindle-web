@@ -1,0 +1,127 @@
+# Interfaces and Commands (v1)
+
+## 1) CLI Interface (Pipeline Runtime)
+
+Current commands:
+
+1. `pipeline:list-sources`
+2. `pipeline:run-source -- <source_key>`
+
+Planned commands:
+
+1. `pipeline:run-all`
+2. `pipeline:run-source -- <source_key> --mode incremental|full|replay`
+3. `pipeline:replay-run -- <run_id>`
+4. `pipeline:source-health`
+5. `pipeline:source-probe -- <url_or_domain>`
+
+## 2) Scheduler Interface
+
+Required scheduler capabilities:
+
+1. run by source and cadence
+2. enforce max concurrent runs
+3. enqueue retries with backoff
+4. manual rerun triggers by source/run ID
+
+## 3) Studio Service Interfaces
+
+Core Studio ingestion service functions:
+
+1. `listIngestionCandidates(filters)`
+2. `getIngestionCandidateDetail(candidateId)`
+3. `rejectIngestionCandidate({candidateId, actorUserId, note})`
+4. `markIngestionCandidateNeedsWork({candidateId, actorUserId, note})`
+5. `promoteIngestionCandidateToDraft({candidateId, actorUserId})`
+
+## 4) Suggested API Contract Shapes
+
+Candidate list response:
+
+1. `items[]`
+2. `total`
+3. `cursor` (optional for pagination)
+4. `aggregates` (status/source counts, optional)
+
+Candidate detail response:
+
+1. `candidate`
+2. `traits[]`
+3. `syncLog[]`
+4. `duplicateHints[]` (planned)
+
+Promotion response:
+
+1. `draftId`
+2. `created`
+3. `warnings[]`
+
+## 5) Event and Logging Interface
+
+Standard event payload should include:
+
+1. `event_type`
+2. `source_key`
+3. `run_id`
+4. `page_id` (nullable)
+5. `candidate_id` (nullable)
+6. `status`
+7. `duration_ms`
+8. `error_code` and `error_message` (if failed)
+
+## 6) Metric Emission Interface
+
+Every run should emit:
+
+1. discovered pages count
+2. extracted candidate count
+3. rejected-by-gate count
+4. error counts by category
+5. output snapshot location
+
+## 7) Operational Command Set
+
+App DB migrations:
+
+1. `supabase db push --workdir ./db`
+
+Ingestion DB migrations:
+
+1. `supabase db push --workdir ./ingestion`
+
+Ingestion DB local reset:
+
+1. `supabase db reset --workdir ./ingestion`
+
+Ingestion remote reset (linked project, full reset):
+
+1. `supabase db reset --linked --workdir ./ingestion --no-seed`
+
+Safety rule:
+
+1. Never run linked remote reset against production projects.
+2. Require explicit human approval and environment confirmation before any remote reset.
+3. Prefer ingestion-table truncate for routine cleanup instead of full DB reset.
+
+Routine ingestion-only cleanup (preferred):
+
+```sql
+truncate table
+  public.ingest_sync_log,
+  public.ingest_candidate_traits,
+  public.ingest_candidates,
+  public.ingest_pages,
+  public.ingest_runs
+cascade;
+```
+
+## 8) Interface Versioning
+
+Use explicit versioning for:
+
+1. strategy module behavior
+2. quality scoring logic
+3. candidate schema extensions
+4. Studio service response shapes
+
+Every version change should be represented in logs and run metadata.

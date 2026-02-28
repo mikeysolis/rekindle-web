@@ -2,6 +2,8 @@ import type { LogLevel } from "../core/logger.js"
 
 export type SnapshotMode = "local" | "supabase"
 
+const ENV_CONTRACT_DOC_PATH = "docs/specs/ingestion/14_environment_and_secrets_contract.md"
+
 export interface PipelineConfig {
   ingestSupabaseUrl?: string
   ingestSupabaseServiceRoleKey?: string
@@ -47,9 +49,32 @@ export function assertIngestConfig(
   ingestSupabaseUrl: string
   ingestSupabaseServiceRoleKey: string
 } {
+  if (process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error(
+      "Forbidden env var NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY is set. Service role keys must never be public. See " +
+        ENV_CONTRACT_DOC_PATH
+    )
+  }
+
+  if (process.env.INGEST_SUPABASE_KEY) {
+    throw new Error(
+      "Forbidden env var INGEST_SUPABASE_KEY is set. Use INGEST_SUPABASE_SERVICE_ROLE_KEY only. See " +
+        ENV_CONTRACT_DOC_PATH
+    )
+  }
+
+  const appUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  if (appUrl && config.ingestSupabaseUrl && appUrl === config.ingestSupabaseUrl) {
+    throw new Error(
+      "INGEST_SUPABASE_URL must not match NEXT_PUBLIC_SUPABASE_URL. App and ingestion must use separate Supabase projects. See " +
+        ENV_CONTRACT_DOC_PATH
+    )
+  }
+
   if (!config.ingestSupabaseUrl || !config.ingestSupabaseServiceRoleKey) {
     throw new Error(
-      "Missing ingestion Supabase credentials. Set INGEST_SUPABASE_URL and INGEST_SUPABASE_SERVICE_ROLE_KEY."
+      "Missing ingestion Supabase credentials. Set INGEST_SUPABASE_URL and INGEST_SUPABASE_SERVICE_ROLE_KEY. See " +
+        ENV_CONTRACT_DOC_PATH
     )
   }
 }
