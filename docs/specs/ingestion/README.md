@@ -30,6 +30,7 @@ It covers:
 14. `14_environment_and_secrets_contract.md`
 15. `15_operations_runbook.md`
 16. `16_quarterly_governance_review_operation.md`
+17. `17_system_usage_guide.md`
 
 ## Scope Boundaries
 

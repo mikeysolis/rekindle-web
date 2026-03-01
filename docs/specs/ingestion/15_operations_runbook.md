@@ -11,6 +11,8 @@ Define repeatable, low-risk procedures for:
 4. performing guarded full resets only when necessary
 5. executing quarterly ingestion governance reviews
 
+For full day-to-day usage instructions, see `17_system_usage_guide.md`.
+
 ## 2) Safety Rules
 
 1. Prefer replay and ingestion-table cleanup before full reset.

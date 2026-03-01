@@ -6,6 +6,16 @@ This repo contains:
 - A vendored ingestion pipeline scaffold (`/pipeline`)
 - Ingestion Supabase local config and migrations (`/ingestion`)
 
+## Getting Started
+
+For a full end-to-end operator guide, start here:
+
+- `docs/specs/ingestion/17_system_usage_guide.md`
+
+For the full ingestion spec pack/document map:
+
+- `docs/specs/ingestion/README.md`
+
 ## Environment
 
 Set app auth env vars (existing Studio):
