@@ -7,13 +7,14 @@ Current commands:
 1. `pipeline:list-sources`
 2. `pipeline:run-source -- <source_key>`
 3. `pipeline:source-health [source_key]`
+4. `pipeline:source-probe -- <url_or_domain>`
+5. `pipeline:reconcile-promotions`
 
 Planned commands:
 
 1. `pipeline:run-all`
 2. `pipeline:run-source -- <source_key> --mode incremental|full|replay`
 3. `pipeline:replay-run -- <run_id>`
-4. `pipeline:source-probe -- <url_or_domain>`
 
 ## 2) Scheduler Interface
 

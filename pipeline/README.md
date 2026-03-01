@@ -9,6 +9,9 @@ Current CLI commands:
 - `run-source <source_key> --respect-cadence`
 - `run-source <source_key> --force`
 - `source-health [source_key]`
+- `source-probe <url_or_domain>`
+- `source-probe <url_or_domain> --approval-action approved_for_trial`
+- `source-probe <url_or_domain> --no-create-proposal`
 - `reconcile-promotions`
 
 Current source keys:
@@ -25,6 +28,7 @@ Source fixture tests:
 - `npm run pipeline:test:sources`
 - `npm run pipeline:test:quality`
 - `npm run pipeline:test:runtime`
+- `npm run pipeline:test:source-probe`
 - `npm run pipeline:test:reconcile`
 
 Source module contract:

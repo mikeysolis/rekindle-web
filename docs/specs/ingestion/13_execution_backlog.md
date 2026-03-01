@@ -379,9 +379,23 @@ Gate B (Epic 2 exit; trailing 14 days):
 Dependencies: ING-004, ING-020
 
 Checklist:
-- [ ] Probe root/list pages and detect structure patterns.
-- [ ] Generate recommended strategy ladder and confidence.
-- [ ] Save onboarding report with operator approval action.
+- [x] Probe root/list pages and detect structure patterns.
+- [x] Generate recommended strategy ladder and confidence.
+- [x] Save onboarding report with operator approval action.
+
+Verification note:
+1. Added onboarding report schema migration:
+   - `ingestion/supabase/migrations/0005_ingestion_source_onboarding_reports.sql`.
+2. Implemented source probe job with root/list/robots/sitemap probing and strategy recommendation:
+   - `pipeline/src/jobs/source-probe.ts`.
+3. Added onboarding persistence and source proposal helper in durable repository:
+   - `pipeline/src/durable-store/repository.ts`.
+4. Added CLI + npm command for onboarding probe execution:
+   - `pipeline/src/index.ts`
+   - `npm run pipeline:source-probe -- <url_or_domain>`.
+5. Added probe heuristics tests and verified on 2026-03-01:
+   - `pipeline/src/jobs/source-probe.test.ts`
+   - `npm run pipeline:test:source-probe`.
 
 Acceptance criteria:
 1. New source onboarding can be completed with a repeatable operator workflow.

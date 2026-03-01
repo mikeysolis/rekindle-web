@@ -87,6 +87,36 @@ export interface SourceHealthRow {
   metadataJson: Record<string, unknown>
 }
 
+export type SourceOnboardingProbeStatus = "completed" | "failed"
+export type SourceOnboardingFetchStatus = "ok" | "partial" | "failed"
+export type SourceOnboardingApprovalAction =
+  | "pending_review"
+  | "approved_for_trial"
+  | "rejected"
+
+export interface SourceOnboardingReportInsert {
+  sourceKey: string
+  inputUrl: string
+  rootUrl: string
+  sourceDomain: string
+  probeStatus: SourceOnboardingProbeStatus
+  fetchStatus: SourceOnboardingFetchStatus
+  recommendedStrategyOrder: string[]
+  recommendationConfidence: number
+  operatorApprovalAction: SourceOnboardingApprovalAction
+  operatorDecisionReason?: string | null
+  actorUserId?: string | null
+  decidedAt?: string | null
+  evidenceJson: Record<string, unknown>
+}
+
+export interface SourceOnboardingReportRow {
+  id: string
+  sourceKey: string
+  operatorApprovalAction: SourceOnboardingApprovalAction
+  createdAt: string | null
+}
+
 type SyncStatus = "pending" | "success" | "failed"
 
 const must = <T>(value: T | null, context: string): T => {
@@ -275,6 +305,113 @@ export class DurableStoreRepository {
     }
 
     return ((data ?? []) as Record<string, unknown>[]).map(toSourceHealthRow)
+  }
+
+  async ensureSourceRegistryProposal(params: {
+    sourceKey: string
+    displayName: string
+    sourceDomain: string
+    rootUrl: string
+    ownerTeam?: string
+    recommendedStrategyOrder?: string[]
+  }): Promise<{ created: boolean }> {
+    const existing = await this.getSourceRegistryRuntime(params.sourceKey)
+    if (existing) {
+      return { created: false }
+    }
+
+    const allowedStrategies = new Set([
+      "api",
+      "feed",
+      "sitemap_html",
+      "pdf",
+      "ics",
+      "headless",
+    ])
+
+    const strategyOrder = (params.recommendedStrategyOrder ?? [])
+      .filter((strategy) => allowedStrategies.has(strategy))
+      .slice(0, 6)
+
+    const fallbackStrategyOrder = strategyOrder.length > 0 ? strategyOrder : ["sitemap_html"]
+
+    const { error } = await this.client.from("ingest_source_registry").insert({
+      source_key: params.sourceKey,
+      display_name: params.displayName,
+      domains: [params.sourceDomain],
+      content_type: "ideas",
+      state: "proposed",
+      owner_team: params.ownerTeam ?? "ingestion",
+      discovery_methods: ["manual_seed"],
+      seed_urls: [params.rootUrl],
+      strategy_order: fallbackStrategyOrder,
+      approved_for_prod: false,
+      metadata_json: {
+        onboarding: {
+          source: "source_probe",
+          created_at: new Date().toISOString(),
+        },
+      },
+    })
+
+    if (error) {
+      const message = String(error.message ?? "")
+      if (message.includes("duplicate key value")) {
+        return { created: false }
+      }
+      throw new Error(
+        `Failed to create source registry proposal (${params.sourceKey}): ${error.message}`
+      )
+    }
+
+    return { created: true }
+  }
+
+  async createSourceOnboardingReport(
+    params: SourceOnboardingReportInsert
+  ): Promise<SourceOnboardingReportRow> {
+    const { data, error } = await this.client
+      .from("ingest_source_onboarding_reports")
+      .insert({
+        source_key: params.sourceKey,
+        input_url: params.inputUrl,
+        root_url: params.rootUrl,
+        source_domain: params.sourceDomain,
+        probe_status: params.probeStatus,
+        fetch_status: params.fetchStatus,
+        recommended_strategy_order: params.recommendedStrategyOrder,
+        recommendation_confidence: params.recommendationConfidence,
+        operator_approval_action: params.operatorApprovalAction,
+        operator_decision_reason: params.operatorDecisionReason ?? null,
+        actor_user_id: params.actorUserId ?? null,
+        decided_at: params.decidedAt ?? null,
+        evidence_json: params.evidenceJson,
+      })
+      .select("id, source_key, operator_approval_action, created_at")
+      .single()
+
+    if (error) {
+      throw new Error(`Failed to create source onboarding report: ${error.message}`)
+    }
+
+    const row = must(
+      data as
+        | {
+            id: string
+            source_key: string
+            operator_approval_action: SourceOnboardingApprovalAction
+            created_at: string | null
+          }
+        | null,
+      "Missing source onboarding report row after insert"
+    )
+
+    return {
+      id: row.id,
+      sourceKey: row.source_key,
+      operatorApprovalAction: row.operator_approval_action,
+      createdAt: row.created_at,
+    }
   }
 
   async insertDiscoveredPages(runId: string, sourceKey: string, urls: string[]): Promise<IngestPage[]> {
