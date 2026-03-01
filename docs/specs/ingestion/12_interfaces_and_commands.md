@@ -34,6 +34,8 @@ Core Studio ingestion service functions:
 3. `rejectIngestionCandidate({candidateId, actorUserId, note})`
 4. `markIngestionCandidateNeedsWork({candidateId, actorUserId, note})`
 5. `promoteIngestionCandidateToDraft({candidateId, actorUserId})`
+6. `reactivateIngestionSource({sourceKey, actorUserId, reason, productOwnerApproved, complianceAcknowledged})`
+7. `retireIngestionSource({sourceKey, actorUserId, reason, productOwnerApproved, complianceAcknowledged, archivalReference, archivalSummary})`
 
 ## 4) Suggested API Contract Shapes
 

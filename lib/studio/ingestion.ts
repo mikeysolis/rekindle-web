@@ -135,6 +135,32 @@ export type IngestionSourcePortfolioMetrics = {
   rows: IngestionSourcePortfolioRow[];
 };
 
+export type IngestionSourceLifecycleState =
+  | "proposed"
+  | "approved_for_trial"
+  | "active"
+  | "degraded"
+  | "paused"
+  | "retired";
+
+export type ReactivateIngestionSourceInput = {
+  sourceKey: string;
+  actorUserId: string;
+  reason: string;
+  productOwnerApproved: boolean;
+  complianceAcknowledged: boolean;
+};
+
+export type RetireIngestionSourceInput = {
+  sourceKey: string;
+  actorUserId: string;
+  reason: string;
+  productOwnerApproved: boolean;
+  complianceAcknowledged: boolean;
+  archivalReference: string | null;
+  archivalSummary: string | null;
+};
+
 export type PromoteIngestionCandidateResult = {
   draftId: string;
   created: boolean;
@@ -222,6 +248,14 @@ type RawPortfolioTraitRow = {
   trait_option_slug: string;
 };
 
+type RawSourceLifecycleRow = {
+  source_key: string;
+  state: string;
+  approved_for_prod: boolean;
+  config_version: string;
+  metadata_json: unknown;
+};
+
 function parseCandidateStatus(value: string | null): IngestCandidateStatus {
   if (!value) {
     return "new";
@@ -239,6 +273,50 @@ function parseCandidateStatus(value: string | null): IngestCandidateStatus {
   }
 
   return "new";
+}
+
+const SOURCE_LIFECYCLE_STATES: IngestionSourceLifecycleState[] = [
+  "proposed",
+  "approved_for_trial",
+  "active",
+  "degraded",
+  "paused",
+  "retired",
+];
+
+const REACTIVATABLE_SOURCE_STATE_SET = new Set<IngestionSourceLifecycleState>([
+  "paused",
+  "degraded",
+]);
+const RETIRABLE_SOURCE_STATE_SET = new Set<IngestionSourceLifecycleState>([
+  "active",
+  "degraded",
+  "paused",
+]);
+const LIFECYCLE_WORKFLOW_VERSION = "ing033_v1";
+
+function parseSourceLifecycleState(
+  value: string | null | undefined,
+): IngestionSourceLifecycleState | null {
+  if (!value) {
+    return null;
+  }
+
+  if (SOURCE_LIFECYCLE_STATES.includes(value as IngestionSourceLifecycleState)) {
+    return value as IngestionSourceLifecycleState;
+  }
+
+  return null;
+}
+
+export function canReactivateIngestionSourceState(state: string): boolean {
+  const parsed = parseSourceLifecycleState(state);
+  return parsed ? REACTIVATABLE_SOURCE_STATE_SET.has(parsed) : false;
+}
+
+export function canRetireIngestionSourceState(state: string): boolean {
+  const parsed = parseSourceLifecycleState(state);
+  return parsed ? RETIRABLE_SOURCE_STATE_SET.has(parsed) : false;
 }
 
 function toMetaJson(value: unknown): Record<string, unknown> {
@@ -262,6 +340,52 @@ function toFiniteNumber(value: unknown): number | null {
   }
 
   return null;
+}
+
+function toObjectArray(value: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((item) => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+    .map((item) => ({ ...(item as Record<string, unknown>) }));
+}
+
+function appendBoundedHistory(
+  existingValue: unknown,
+  entry: Record<string, unknown>,
+  maxEntries = 20,
+): Record<string, unknown>[] {
+  return [...toObjectArray(existingValue), entry].slice(-maxEntries);
+}
+
+function normalizeRequiredReason(value: string, label: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error(`${label} is required.`);
+  }
+  return trimmed;
+}
+
+function normalizeOptionalText(value: string | null | undefined): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function nextSourceConfigVersion(currentVersion: string, nowIso: string): string {
+  const trimmed = currentVersion.trim();
+  const parsed = Number.parseInt(trimmed, 10);
+  if (Number.isFinite(parsed) && String(parsed) === trimmed) {
+    return String(parsed + 1);
+  }
+
+  const stamp = nowIso.replace(/[-:.TZ]/g, "").slice(0, 14);
+  const base = trimmed.length > 0 ? trimmed : "1";
+  return `${base}-auto-${stamp}`;
 }
 
 function parseFailedPagesFromRunMeta(value: unknown): number {
@@ -519,43 +643,42 @@ function computeDuplicateHints(params: {
   const candidateKey = params.candidate.candidateKey;
   const baseTitleTokens = tokenizeForSimilarity(params.candidate.title);
 
-  const scored = params.rows
-    .map((row) => {
-      const reasons: string[] = [];
-      let score = 0;
+  const scored: IngestionDuplicateHint[] = [];
+  for (const row of params.rows) {
+    const reasons: string[] = [];
+    let score = 0;
 
-      if (row.candidate_key === candidateKey) {
-        reasons.push("same_candidate_key");
-        score = Math.max(score, 1);
-      }
+    if (row.candidate_key === candidateKey) {
+      reasons.push("same_candidate_key");
+      score = Math.max(score, 1);
+    }
 
-      if (normalizeComparableUrl(row.source_url) === sourceUrl) {
-        reasons.push("same_source_url");
-        score = Math.max(score, 0.98);
-      }
+    if (normalizeComparableUrl(row.source_url) === sourceUrl) {
+      reasons.push("same_source_url");
+      score = Math.max(score, 0.98);
+    }
 
-      const titleSimilarity = jaccardSimilarity(baseTitleTokens, tokenizeForSimilarity(row.title));
-      if (titleSimilarity >= 0.7) {
-        reasons.push("high_title_similarity");
-        score = Math.max(score, titleSimilarity);
-      }
+    const titleSimilarity = jaccardSimilarity(baseTitleTokens, tokenizeForSimilarity(row.title));
+    if (titleSimilarity >= 0.7) {
+      reasons.push("high_title_similarity");
+      score = Math.max(score, titleSimilarity);
+    }
 
-      if (reasons.length === 0 && titleSimilarity < 0.66) {
-        return null;
-      }
+    if (reasons.length === 0 && titleSimilarity < 0.66) {
+      continue;
+    }
 
-      return {
-        candidateId: row.id,
-        promotedDraftId: null,
-        sourceUrl: row.source_url,
-        title: row.title,
-        status: parseCandidateStatus(row.status),
-        similarityScore: Number(score.toFixed(4)),
-        reasons,
-        updatedAt: row.updated_at,
-      } satisfies IngestionDuplicateHint;
-    })
-    .filter((value): value is IngestionDuplicateHint => Boolean(value));
+    scored.push({
+      candidateId: row.id,
+      promotedDraftId: null,
+      sourceUrl: row.source_url,
+      title: row.title,
+      status: parseCandidateStatus(row.status),
+      similarityScore: Number(score.toFixed(4)),
+      reasons,
+      updatedAt: row.updated_at,
+    });
+  }
 
   return scored.sort((left, right) => right.similarityScore - left.similarityScore).slice(0, 5);
 }
@@ -636,7 +759,7 @@ export async function listIngestionSourcePortfolioMetrics(
           .from("ingest_source_registry")
           .select("source_key, display_name, state, approved_for_prod")
           .order("source_key", { ascending: true })
-          .range(from, to) as Promise<{
+          .range(from, to) as unknown as Promise<{
           data: RawSourceRegistryPortfolioRow[] | null;
           error: { message: string } | null;
         }>,
@@ -649,7 +772,7 @@ export async function listIngestionSourcePortfolioMetrics(
           .select("id, source_key, title, status, created_at, updated_at")
           .gte("created_at", windowStartAt)
           .order("created_at", { ascending: false })
-          .range(from, to) as Promise<{
+          .range(from, to) as unknown as Promise<{
           data: RawPortfolioCandidateActivityRow[] | null;
           error: { message: string } | null;
         }>,
@@ -663,7 +786,7 @@ export async function listIngestionSourcePortfolioMetrics(
           .in("status", REVIEWED_PORTFOLIO_STATUSES)
           .gte("updated_at", windowStartAt)
           .order("updated_at", { ascending: false })
-          .range(from, to) as Promise<{
+          .range(from, to) as unknown as Promise<{
           data: RawPortfolioCandidateActivityRow[] | null;
           error: { message: string } | null;
         }>,
@@ -676,7 +799,7 @@ export async function listIngestionSourcePortfolioMetrics(
           .select("source_key, status, meta_json, started_at")
           .gte("started_at", windowStartAt)
           .order("started_at", { ascending: false })
-          .range(from, to) as Promise<{
+          .range(from, to) as unknown as Promise<{
           data: RawPortfolioRunRow[] | null;
           error: { message: string } | null;
         }>,
@@ -788,7 +911,7 @@ export async function listIngestionSourcePortfolioMetrics(
           .select("candidate_id, trait_type_slug, trait_option_slug")
           .in("candidate_id", idChunk)
           .order("candidate_id", { ascending: true })
-          .range(from, to) as Promise<{
+          .range(from, to) as unknown as Promise<{
           data: RawPortfolioTraitRow[] | null;
           error: { message: string } | null;
         }>,
@@ -919,6 +1042,198 @@ export async function listIngestionSourceKeys(): Promise<string[]> {
   return Array.from(
     new Set(keys.filter((value) => value.length > 0)),
   );
+}
+
+async function readSourceLifecycleRow(sourceKey: string): Promise<RawSourceLifecycleRow> {
+  const ingest = createIngestionServiceRoleClient();
+  const { data, error } = await ingest
+    .from("ingest_source_registry")
+    .select("source_key, state, approved_for_prod, config_version, metadata_json")
+    .eq("source_key", sourceKey)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to load source registry row (${sourceKey}): ${error.message}`);
+  }
+
+  if (!data) {
+    throw new Error(`Source "${sourceKey}" not found in ingest_source_registry.`);
+  }
+
+  return data as RawSourceLifecycleRow;
+}
+
+export async function reactivateIngestionSource(params: ReactivateIngestionSourceInput): Promise<void> {
+  const sourceKey = params.sourceKey.trim();
+  if (!sourceKey) {
+    throw new Error("Source key is required.");
+  }
+
+  const reason = normalizeRequiredReason(params.reason, "Reactivation reason");
+  if (!params.productOwnerApproved || !params.complianceAcknowledged) {
+    throw new Error(
+      "Reactivation requires product owner approval and compliance acknowledgment.",
+    );
+  }
+
+  const source = await readSourceLifecycleRow(sourceKey);
+  const state = parseSourceLifecycleState(source.state);
+  if (!state) {
+    throw new Error(
+      `Unsupported source state "${source.state}" for source "${sourceKey}".`,
+    );
+  }
+
+  if (!canReactivateIngestionSourceState(state)) {
+    throw new Error(`Source "${sourceKey}" cannot be reactivated from state "${state}".`);
+  }
+
+  const nowIso = new Date().toISOString();
+  const metadata = toMetaJson(source.metadata_json);
+  const lifecycle = toMetaJson(metadata.lifecycle);
+  const reactivationEntry: Record<string, unknown> = {
+    workflow_version: LIFECYCLE_WORKFLOW_VERSION,
+    source_key: sourceKey,
+    from_state: state,
+    to_state: "active",
+    reason,
+    product_owner_approved: true,
+    compliance_acknowledged: true,
+    actor_user_id: params.actorUserId,
+    decided_at: nowIso,
+  };
+  const lifecyclePatch = {
+    ...lifecycle,
+    last_transition: reactivationEntry,
+    reactivation: reactivationEntry,
+    reactivation_history: appendBoundedHistory(
+      lifecycle.reactivation_history,
+      reactivationEntry,
+    ),
+    last_reactivated_at: nowIso,
+  };
+
+  const ingest = createIngestionServiceRoleClient();
+  const configVersion = nextSourceConfigVersion(source.config_version, nowIso);
+
+  const { error: configError } = await ingest.rpc("update_source_config", {
+    p_source_key: sourceKey,
+    p_patch: {
+      approved_for_prod: true,
+      metadata_json: {
+        lifecycle: lifecyclePatch,
+      },
+    },
+    p_config_version: configVersion,
+    p_actor_user_id: params.actorUserId,
+    p_reason: `ING-033 source reactivation review recorded: ${reason}`,
+  });
+
+  if (configError) {
+    throw new Error(
+      `Failed to update source metadata before reactivation (${sourceKey}): ${configError.message}`,
+    );
+  }
+
+  const { error: stateError } = await ingest.rpc("set_source_state", {
+    p_source_key: sourceKey,
+    p_state: "active",
+    p_reason: `ING-033 source reactivated after review: ${reason}`,
+    p_actor_user_id: params.actorUserId,
+  });
+
+  if (stateError) {
+    throw new Error(`Failed to reactivate source (${sourceKey}): ${stateError.message}`);
+  }
+}
+
+export async function retireIngestionSource(params: RetireIngestionSourceInput): Promise<void> {
+  const sourceKey = params.sourceKey.trim();
+  if (!sourceKey) {
+    throw new Error("Source key is required.");
+  }
+
+  const reason = normalizeRequiredReason(params.reason, "Retirement reason");
+  if (!params.productOwnerApproved || !params.complianceAcknowledged) {
+    throw new Error(
+      "Retirement requires product owner approval and compliance acknowledgment.",
+    );
+  }
+
+  const source = await readSourceLifecycleRow(sourceKey);
+  const state = parseSourceLifecycleState(source.state);
+  if (!state) {
+    throw new Error(
+      `Unsupported source state "${source.state}" for source "${sourceKey}".`,
+    );
+  }
+
+  if (!canRetireIngestionSourceState(state)) {
+    if (state === "retired") {
+      throw new Error(`Source "${sourceKey}" is already retired.`);
+    }
+    throw new Error(`Source "${sourceKey}" cannot be retired from state "${state}".`);
+  }
+
+  const archivalReference = normalizeOptionalText(params.archivalReference);
+  const archivalSummary = normalizeOptionalText(params.archivalSummary);
+  const nowIso = new Date().toISOString();
+  const metadata = toMetaJson(source.metadata_json);
+  const lifecycle = toMetaJson(metadata.lifecycle);
+  const retirementEntry: Record<string, unknown> = {
+    workflow_version: LIFECYCLE_WORKFLOW_VERSION,
+    source_key: sourceKey,
+    from_state: state,
+    to_state: "retired",
+    reason,
+    product_owner_approved: true,
+    compliance_acknowledged: true,
+    archival_reference: archivalReference,
+    archival_summary: archivalSummary,
+    actor_user_id: params.actorUserId,
+    decided_at: nowIso,
+  };
+
+  const ingest = createIngestionServiceRoleClient();
+  const { error: stateError } = await ingest.rpc("set_source_state", {
+    p_source_key: sourceKey,
+    p_state: "retired",
+    p_reason: `ING-033 source retired: ${reason}`,
+    p_actor_user_id: params.actorUserId,
+  });
+
+  if (stateError) {
+    throw new Error(`Failed to retire source (${sourceKey}): ${stateError.message}`);
+  }
+
+  const lifecyclePatch = {
+    ...lifecycle,
+    last_transition: retirementEntry,
+    retirement: retirementEntry,
+    retirement_history: appendBoundedHistory(lifecycle.retirement_history, retirementEntry),
+    retired_at: nowIso,
+  };
+  const configVersion = nextSourceConfigVersion(source.config_version, nowIso);
+
+  const { error: configError } = await ingest.rpc("update_source_config", {
+    p_source_key: sourceKey,
+    p_patch: {
+      approved_for_prod: false,
+      cadence: null,
+      metadata_json: {
+        lifecycle: lifecyclePatch,
+      },
+    },
+    p_config_version: configVersion,
+    p_actor_user_id: params.actorUserId,
+    p_reason: `ING-033 retirement archival metadata recorded: ${reason}`,
+  });
+
+  if (configError) {
+    throw new Error(
+      `Source "${sourceKey}" was retired but metadata update failed: ${configError.message}`,
+    );
+  }
 }
 
 export async function listIngestionCandidates(

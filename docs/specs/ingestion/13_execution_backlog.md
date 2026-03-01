@@ -468,9 +468,32 @@ Acceptance criteria:
 Dependencies: ING-032
 
 Checklist:
-- [ ] Add explicit review flow to reactivate paused/degraded sources.
-- [ ] Add retirement flow with reason and archival metadata.
-- [ ] Ensure terminal behavior for retired sources.
+- [x] Add explicit review flow to reactivate paused/degraded sources.
+- [x] Add retirement flow with reason and archival metadata.
+- [x] Ensure terminal behavior for retired sources.
+
+Verification note:
+1. Added source lifecycle mutation service functions for Studio:
+   - `reactivateIngestionSource(...)`
+   - `retireIngestionSource(...)`
+   - `canReactivateIngestionSourceState(...)`
+   - `canRetireIngestionSourceState(...)`
+   (`lib/studio/ingestion.ts`).
+2. Mutations use audited ingestion RPCs (`set_source_state`, `update_source_config`) with:
+   - required review reason
+   - required product owner approval + compliance acknowledgment
+   - lifecycle metadata history persisted under `metadata_json.lifecycle.*`
+   - retirement archival metadata (`archival_reference`, `archival_summary`).
+3. Added admin-only Source Lifecycle Review UI in Studio ingestion page:
+   - explicit reactivation flow for `paused|degraded`
+   - explicit retirement flow for `active|degraded|paused`
+   - source-scoped success/error feedback and filter-preserving redirects
+   (`app/(studio)/studio/ingestion/page.tsx`).
+4. Terminal retired behavior is enforced by:
+   - hiding lifecycle actions for `retired` sources in Studio
+   - state guardrails in ingestion DB RPC/trigger layer.
+5. Verified on 2026-03-01:
+   - `npx eslint 'app/(studio)/studio/ingestion/page.tsx' lib/studio/ingestion.ts`.
 
 Acceptance criteria:
 1. Reactivation/retirement actions are auditable and policy-compliant.

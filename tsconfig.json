@@ -30,5 +30,11 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "pipeline/dist", "pipeline/src"]
+  "exclude": [
+    "node_modules",
+    "pipeline/dist",
+    "pipeline/src",
+    "db/supabase/functions",
+    "db/supabase/seeds"
+  ]
 }

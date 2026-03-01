@@ -86,3 +86,17 @@ Every action should produce structured labels:
 5. degree of manual rewrite needed
 
 These labels are mandatory inputs for tuning extraction quality.
+
+## 7) Source Lifecycle Governance (Admin)
+
+1. Open `Studio > Ingestion > Source Lifecycle Review`.
+2. Reactivation flow (`paused|degraded -> active`):
+   - choose source
+   - enter review reason
+   - confirm product owner approval and compliance acknowledgment
+3. Retirement flow (`active|degraded|paused -> retired`):
+   - choose source
+   - enter retirement reason
+   - optionally provide archival reference and archival summary
+   - confirm product owner approval and compliance acknowledgment
+4. `retired` is terminal and should not offer reactivation controls in Studio.

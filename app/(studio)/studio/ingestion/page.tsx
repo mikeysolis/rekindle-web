@@ -1,8 +1,11 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import StudioShell from "@/components/studio/StudioShell";
 import { requireStudioUser } from "@/lib/studio/auth";
 import {
+  canReactivateIngestionSourceState,
+  canRetireIngestionSourceState,
   INGEST_CANDIDATE_STATUSES,
   type IngestionConfidenceFilter,
   type IngestionDuplicateRiskFilter,
@@ -10,8 +13,11 @@ import {
   listIngestionCandidates,
   listIngestionSourcePortfolioMetrics,
   listIngestionSourceKeys,
+  reactivateIngestionSource,
+  retireIngestionSource,
   type IngestCandidateStatus,
 } from "@/lib/studio/ingestion";
+import { hasStudioRoleAtLeast } from "@/lib/studio/roles";
 
 type IngestionPageProps = {
   searchParams?: Promise<{
@@ -23,6 +29,8 @@ type IngestionPageProps = {
     dateFrom?: string;
     dateTo?: string;
     portfolioWindow?: string;
+    sourceSaved?: string;
+    sourceError?: string;
   }>;
 };
 
@@ -113,9 +121,22 @@ function formatPercent(value: number | null): string {
   return `${(value * 100).toFixed(1)}%`;
 }
 
+function normalizeLifecycleText(value: FormDataEntryValue | null): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function isChecked(value: FormDataEntryValue | null): boolean {
+  return value === "on" || value === "true";
+}
+
 export default async function StudioIngestionPage({ searchParams }: IngestionPageProps) {
   const studioUser = await requireStudioUser("viewer");
   const params = (await searchParams) ?? {};
+  const canGovernSources = hasStudioRoleAtLeast(studioUser.role, "admin");
 
   const rawStatus = (params.status ?? "").trim();
   const status: IngestCandidateStatus | "all" =
@@ -129,6 +150,8 @@ export default async function StudioIngestionPage({ searchParams }: IngestionPag
   const dateFrom = (params.dateFrom ?? "").trim();
   const dateTo = (params.dateTo ?? "").trim();
   const portfolioWindow = parsePortfolioWindow((params.portfolioWindow ?? "").trim());
+  const sourceSaved = (params.sourceSaved ?? "").trim();
+  const sourceError = (params.sourceError ?? "").trim();
 
   const [candidates, sourceKeys, sourcePortfolio] = await Promise.all([
     listIngestionCandidates({
@@ -144,6 +167,122 @@ export default async function StudioIngestionPage({ searchParams }: IngestionPag
     listIngestionSourceKeys(),
     listIngestionSourcePortfolioMetrics(portfolioWindow),
   ]);
+  const reactivatableSources = sourcePortfolio.rows.filter((row) =>
+    canReactivateIngestionSourceState(row.state),
+  );
+  const retireableSources = sourcePortfolio.rows.filter((row) =>
+    canRetireIngestionSourceState(row.state),
+  );
+
+  const baseQueryEntries: Array<[string, string]> = [];
+  if (status !== "curated") {
+    baseQueryEntries.push(["status", status]);
+  }
+  if (source) {
+    baseQueryEntries.push(["source", source]);
+  }
+  if (query) {
+    baseQueryEntries.push(["q", query]);
+  }
+  if (confidence !== "all") {
+    baseQueryEntries.push(["confidence", confidence]);
+  }
+  if (duplicateRisk !== "all") {
+    baseQueryEntries.push(["duplicateRisk", duplicateRisk]);
+  }
+  if (dateFrom) {
+    baseQueryEntries.push(["dateFrom", dateFrom]);
+  }
+  if (dateTo) {
+    baseQueryEntries.push(["dateTo", dateTo]);
+  }
+  if (portfolioWindow !== 30) {
+    baseQueryEntries.push(["portfolioWindow", String(portfolioWindow)]);
+  }
+
+  async function reactivateSourceAction(formData: FormData) {
+    "use server";
+
+    const actingUser = await requireStudioUser("admin");
+    const sourceKey = String(formData.get("source_key") ?? "").trim();
+    const reason = normalizeLifecycleText(formData.get("reason"));
+    const productOwnerApproved = isChecked(formData.get("product_owner_approved"));
+    const complianceAcknowledged = isChecked(formData.get("compliance_acknowledged"));
+
+    if (!sourceKey) {
+      const queryParams = new URLSearchParams(baseQueryEntries);
+      queryParams.set("sourceError", "Source key is required for reactivation.");
+      const queryString = queryParams.toString();
+      redirect(queryString.length > 0 ? `/studio/ingestion?${queryString}` : "/studio/ingestion");
+    }
+
+    try {
+      await reactivateIngestionSource({
+        sourceKey,
+        actorUserId: actingUser.userId,
+        reason: reason ?? "",
+        productOwnerApproved,
+        complianceAcknowledged,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const queryParams = new URLSearchParams(baseQueryEntries);
+      queryParams.set("source", sourceKey);
+      queryParams.set("sourceError", message);
+      const queryString = queryParams.toString();
+      redirect(queryString.length > 0 ? `/studio/ingestion?${queryString}` : "/studio/ingestion");
+    }
+
+    const queryParams = new URLSearchParams(baseQueryEntries);
+    queryParams.set("source", sourceKey);
+    queryParams.set("sourceSaved", `Reactivated source ${sourceKey}.`);
+    const queryString = queryParams.toString();
+    redirect(queryString.length > 0 ? `/studio/ingestion?${queryString}` : "/studio/ingestion");
+  }
+
+  async function retireSourceAction(formData: FormData) {
+    "use server";
+
+    const actingUser = await requireStudioUser("admin");
+    const sourceKey = String(formData.get("source_key") ?? "").trim();
+    const reason = normalizeLifecycleText(formData.get("reason"));
+    const archivalReference = normalizeLifecycleText(formData.get("archival_reference"));
+    const archivalSummary = normalizeLifecycleText(formData.get("archival_summary"));
+    const productOwnerApproved = isChecked(formData.get("product_owner_approved"));
+    const complianceAcknowledged = isChecked(formData.get("compliance_acknowledged"));
+
+    if (!sourceKey) {
+      const queryParams = new URLSearchParams(baseQueryEntries);
+      queryParams.set("sourceError", "Source key is required for retirement.");
+      const queryString = queryParams.toString();
+      redirect(queryString.length > 0 ? `/studio/ingestion?${queryString}` : "/studio/ingestion");
+    }
+
+    try {
+      await retireIngestionSource({
+        sourceKey,
+        actorUserId: actingUser.userId,
+        reason: reason ?? "",
+        productOwnerApproved,
+        complianceAcknowledged,
+        archivalReference,
+        archivalSummary,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const queryParams = new URLSearchParams(baseQueryEntries);
+      queryParams.set("source", sourceKey);
+      queryParams.set("sourceError", message);
+      const queryString = queryParams.toString();
+      redirect(queryString.length > 0 ? `/studio/ingestion?${queryString}` : "/studio/ingestion");
+    }
+
+    const queryParams = new URLSearchParams(baseQueryEntries);
+    queryParams.set("source", sourceKey);
+    queryParams.set("sourceSaved", `Retired source ${sourceKey}.`);
+    const queryString = queryParams.toString();
+    redirect(queryString.length > 0 ? `/studio/ingestion?${queryString}` : "/studio/ingestion");
+  }
 
   return (
     <StudioShell role={studioUser.role} email={studioUser.email}>
@@ -282,6 +421,16 @@ export default async function StudioIngestionPage({ searchParams }: IngestionPag
               Generated: {formatDateTime(sourcePortfolio.summary.generatedAt)}
             </p>
           </div>
+          {sourceSaved && (
+            <p className="rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+              {sourceSaved}
+            </p>
+          )}
+          {sourceError && (
+            <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {sourceError}
+            </p>
+          )}
 
           <div className="grid gap-3 md:grid-cols-4">
             <article className="rounded border border-zinc-200 bg-zinc-50 p-3">
@@ -375,6 +524,151 @@ export default async function StudioIngestionPage({ searchParams }: IngestionPag
               </tbody>
             </table>
           </div>
+
+          <section className="space-y-3 rounded border border-zinc-200 bg-zinc-50 p-3">
+            <div>
+              <h4 className="text-sm font-semibold">Source Lifecycle Review</h4>
+              <p className="text-xs text-zinc-600">
+                Reactivate paused/degraded sources after review, or retire sources with archival
+                notes. Retired sources are terminal.
+              </p>
+            </div>
+            {!canGovernSources && (
+              <p className="rounded border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-600">
+                You have read-only access. Admin role is required for source lifecycle actions.
+              </p>
+            )}
+            {canGovernSources && (
+              <div className="grid gap-3 lg:grid-cols-2">
+                <form action={reactivateSourceAction} className="space-y-2 rounded border border-zinc-200 bg-white p-3">
+                  <h5 className="text-sm font-medium">Reactivate Source</h5>
+                  <p className="text-xs text-zinc-600">
+                    Allowed states: paused, degraded.
+                  </p>
+                  <label className="block text-sm">
+                    <span className="mb-1 block font-medium">Source</span>
+                    <select
+                      name="source_key"
+                      className="w-full rounded border border-zinc-300 px-3 py-2"
+                      defaultValue={source || ""}
+                      required
+                    >
+                      <option value="" disabled>
+                        Select source
+                      </option>
+                      {reactivatableSources.map((row) => (
+                        <option key={row.sourceKey} value={row.sourceKey}>
+                          {row.displayName} ({row.sourceKey})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block text-sm">
+                    <span className="mb-1 block font-medium">Review reason</span>
+                    <textarea
+                      name="reason"
+                      rows={3}
+                      className="w-full rounded border border-zinc-300 px-3 py-2"
+                      placeholder="Why this source is safe and ready to return to active."
+                      required
+                    />
+                  </label>
+                  <label className="flex items-start gap-2 text-xs text-zinc-700">
+                    <input type="checkbox" name="product_owner_approved" required className="mt-0.5" />
+                    Product owner approval confirmed
+                  </label>
+                  <label className="flex items-start gap-2 text-xs text-zinc-700">
+                    <input
+                      type="checkbox"
+                      name="compliance_acknowledged"
+                      required
+                      className="mt-0.5"
+                    />
+                    Compliance acknowledgment confirmed
+                  </label>
+                  <button
+                    type="submit"
+                    disabled={reactivatableSources.length === 0}
+                    className="rounded border border-zinc-300 px-3 py-2 text-sm hover:border-zinc-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Reactivate
+                  </button>
+                </form>
+
+                <form action={retireSourceAction} className="space-y-2 rounded border border-zinc-200 bg-white p-3">
+                  <h5 className="text-sm font-medium">Retire Source</h5>
+                  <p className="text-xs text-zinc-600">
+                    Allowed states: active, degraded, paused.
+                  </p>
+                  <label className="block text-sm">
+                    <span className="mb-1 block font-medium">Source</span>
+                    <select
+                      name="source_key"
+                      className="w-full rounded border border-zinc-300 px-3 py-2"
+                      defaultValue={source || ""}
+                      required
+                    >
+                      <option value="" disabled>
+                        Select source
+                      </option>
+                      {retireableSources.map((row) => (
+                        <option key={row.sourceKey} value={row.sourceKey}>
+                          {row.displayName} ({row.sourceKey})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block text-sm">
+                    <span className="mb-1 block font-medium">Retirement reason</span>
+                    <textarea
+                      name="reason"
+                      rows={3}
+                      className="w-full rounded border border-zinc-300 px-3 py-2"
+                      placeholder="Why this source should be permanently retired."
+                      required
+                    />
+                  </label>
+                  <label className="block text-sm">
+                    <span className="mb-1 block font-medium">Archival reference (optional)</span>
+                    <input
+                      name="archival_reference"
+                      className="w-full rounded border border-zinc-300 px-3 py-2"
+                      placeholder="Ticket, document, or storage path"
+                    />
+                  </label>
+                  <label className="block text-sm">
+                    <span className="mb-1 block font-medium">Archival summary (optional)</span>
+                    <textarea
+                      name="archival_summary"
+                      rows={2}
+                      className="w-full rounded border border-zinc-300 px-3 py-2"
+                      placeholder="Short note on archival or follow-up actions"
+                    />
+                  </label>
+                  <label className="flex items-start gap-2 text-xs text-zinc-700">
+                    <input type="checkbox" name="product_owner_approved" required className="mt-0.5" />
+                    Product owner approval confirmed
+                  </label>
+                  <label className="flex items-start gap-2 text-xs text-zinc-700">
+                    <input
+                      type="checkbox"
+                      name="compliance_acknowledged"
+                      required
+                      className="mt-0.5"
+                    />
+                    Compliance acknowledgment confirmed
+                  </label>
+                  <button
+                    type="submit"
+                    disabled={retireableSources.length === 0}
+                    className="rounded border border-zinc-300 px-3 py-2 text-sm hover:border-zinc-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Retire
+                  </button>
+                </form>
+              </div>
+            )}
+          </section>
         </section>
 
         <p className="text-sm text-zinc-600">Showing {candidates.length} candidates.</p>
