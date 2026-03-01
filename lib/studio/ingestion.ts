@@ -504,24 +504,49 @@ export async function markIngestionCandidateNeedsWork(params: {
   });
 }
 
-async function writeSyncLog(params: {
+async function createPendingSyncLog(params: {
   candidateId: string;
   targetSystem: string;
-  targetId: string | null;
-  status: "pending" | "success" | "failed";
+}): Promise<string> {
+  const ingest = createIngestionServiceRoleClient();
+  const { data, error } = await ingest
+    .from("ingest_sync_log")
+    .insert({
+      candidate_id: params.candidateId,
+      target_system: params.targetSystem,
+      target_id: null,
+      status: "pending",
+      error_text: null,
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to create pending ingestion sync log: ${error.message}`);
+  }
+
+  return String(data.id);
+}
+
+async function finalizeSyncLog(params: {
+  syncLogId: string;
+  status: "success" | "failed";
+  targetId?: string | null;
   errorText?: string | null;
 }): Promise<void> {
   const ingest = createIngestionServiceRoleClient();
-  const { error } = await ingest.from("ingest_sync_log").insert({
-    candidate_id: params.candidateId,
-    target_system: params.targetSystem,
-    target_id: params.targetId,
-    status: params.status,
-    error_text: params.errorText ?? null,
-  });
+  const { error } = await ingest
+    .from("ingest_sync_log")
+    .update({
+      status: params.status,
+      target_id: params.targetId ?? null,
+      error_text: params.errorText ?? null,
+      synced_at: new Date().toISOString(),
+    })
+    .eq("id", params.syncLogId);
 
   if (error) {
-    throw new Error(`Failed to write ingestion sync log: ${error.message}`);
+    throw new Error(`Failed to finalize ingestion sync log: ${error.message}`);
   }
 }
 
@@ -745,85 +770,80 @@ export async function promoteIngestionCandidateToDraft(params: {
     throw new Error(`Cannot promote candidate from status "${candidate.status}".`);
   }
 
-  const existingDraftId = await getExistingDraftForCandidate(appSupabase, params.candidateId);
-  if (existingDraftId) {
-    try {
-      await writeSyncLog({
-        candidateId: params.candidateId,
-        targetSystem: "app_draft",
-        targetId: existingDraftId,
-        status: "success",
-        errorText: null,
-      });
-    } catch (error) {
-      warnings.push(error instanceof Error ? error.message : String(error));
-    }
-
-    try {
-      await updateCandidateStatus(params.candidateId, "pushed_to_studio");
-    } catch (error) {
-      warnings.push(error instanceof Error ? error.message : String(error));
-    }
-
-    return {
-      draftId: existingDraftId,
-      created: false,
-      warnings,
-    };
-  }
-
-  let createdDraftId: string | null = null;
-  const { data: insertedDraft, error: insertError } = await appSupabase
-    .from("idea_drafts")
-    .insert({
-      title: candidate.title,
-      description: candidate.description,
-      reason_snippet: candidate.reasonSnippet,
-      source_url: candidate.sourceUrl,
-      status: "draft",
-      active: true,
-      ingest_candidate_id: params.candidateId,
-      created_by: params.actorUserId,
-      updated_by: params.actorUserId,
-    })
-    .select("id")
-    .single();
-
-  if (insertError) {
-    const code = (insertError as { code?: string }).code;
-    if (code === "23505") {
-      const concurrentDraftId = await getExistingDraftForCandidate(
-        appSupabase,
-        params.candidateId,
-      );
-      if (concurrentDraftId) {
-        createdDraftId = concurrentDraftId;
-      }
-    }
-
-    if (!createdDraftId) {
-      throw new Error(`Failed to create draft from candidate: ${insertError.message}`);
-    }
-  } else {
-    createdDraftId = String(insertedDraft.id);
-  }
-
-  const traits = await getCandidateTraits(params.candidateId);
-  const traitWarnings = await syncDraftTraitsFromCandidateTraits({
-    appSupabase,
-    draftId: createdDraftId,
-    traits,
+  const pendingSyncLogId = await createPendingSyncLog({
+    candidateId: params.candidateId,
+    targetSystem: "app_draft",
   });
-  warnings.push(...traitWarnings);
+
+  let createdDraftId: string;
+  let created = false;
 
   try {
-    await writeSyncLog({
-      candidateId: params.candidateId,
-      targetSystem: "app_draft",
-      targetId: createdDraftId,
-      status: "success",
-      errorText: null,
+    const existingDraftId = await getExistingDraftForCandidate(appSupabase, params.candidateId);
+    if (existingDraftId) {
+      createdDraftId = existingDraftId;
+    } else {
+      const { data: insertedDraft, error: insertError } = await appSupabase
+        .from("idea_drafts")
+        .insert({
+          title: candidate.title,
+          description: candidate.description,
+          reason_snippet: candidate.reasonSnippet,
+          source_url: candidate.sourceUrl,
+          status: "draft",
+          active: true,
+          ingest_candidate_id: params.candidateId,
+          created_by: params.actorUserId,
+          updated_by: params.actorUserId,
+        })
+        .select("id")
+        .single();
+
+      if (insertError) {
+        const code = (insertError as { code?: string }).code;
+        if (code === "23505") {
+          const concurrentDraftId = await getExistingDraftForCandidate(
+            appSupabase,
+            params.candidateId,
+          );
+          if (concurrentDraftId) {
+            createdDraftId = concurrentDraftId;
+          } else {
+            throw new Error(
+              "Draft creation hit unique conflict but existing draft could not be resolved.",
+            );
+          }
+        } else {
+          throw new Error(`Failed to create draft from candidate: ${insertError.message}`);
+        }
+      } else {
+        createdDraftId = String(insertedDraft.id);
+        created = true;
+      }
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    try {
+      await finalizeSyncLog({
+        syncLogId: pendingSyncLogId,
+        status: "failed",
+        errorText: message.slice(0, 2000),
+      });
+    } catch (syncError) {
+      const syncMessage = syncError instanceof Error ? syncError.message : String(syncError);
+      throw new Error(`${message} (also failed to record sync failure: ${syncMessage})`);
+    }
+    throw new Error(message);
+  }
+
+  try {
+    const traits = await getCandidateTraits(params.candidateId);
+    const traitWarnings = await syncDraftTraitsFromCandidateTraits({
+      appSupabase,
+      draftId: createdDraftId,
+      traits,
     });
+    warnings.push(...traitWarnings);
   } catch (error) {
     warnings.push(error instanceof Error ? error.message : String(error));
   }
@@ -834,9 +854,20 @@ export async function promoteIngestionCandidateToDraft(params: {
     warnings.push(error instanceof Error ? error.message : String(error));
   }
 
+  try {
+    await finalizeSyncLog({
+      syncLogId: pendingSyncLogId,
+      status: "success",
+      targetId: createdDraftId,
+      errorText: null,
+    });
+  } catch (error) {
+    warnings.push(error instanceof Error ? error.message : String(error));
+  }
+
   return {
     draftId: createdDraftId,
-    created: Boolean(insertedDraft),
+    created,
     warnings,
   };
 }

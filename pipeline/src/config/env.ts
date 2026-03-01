@@ -7,9 +7,13 @@ const ENV_CONTRACT_DOC_PATH = "docs/specs/ingestion/14_environment_and_secrets_c
 export interface PipelineConfig {
   ingestSupabaseUrl?: string
   ingestSupabaseServiceRoleKey?: string
+  appSupabaseUrl?: string
+  appSupabaseServiceRoleKey?: string
   ingestSnapshotMode: SnapshotMode
   ingestSnapshotLocalDir: string
   ingestSnapshotBucket: string
+  reconciliationSpikeThreshold: number
+  reconciliationPageSize: number
   logLevel: LogLevel
   defaultLocale: string
 }
@@ -30,14 +34,30 @@ const readSnapshotMode = (value: string | undefined): SnapshotMode => {
   return "local"
 }
 
+const readPositiveInteger = (value: string | undefined, fallback: number): number => {
+  if (!value) return fallback
+  const parsed = Number.parseInt(value, 10)
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback
+  }
+  return parsed
+}
+
 export function loadConfig(): PipelineConfig {
   return {
     ingestSupabaseUrl: process.env.INGEST_SUPABASE_URL,
     ingestSupabaseServiceRoleKey: process.env.INGEST_SUPABASE_SERVICE_ROLE_KEY,
+    appSupabaseUrl: process.env.APP_SUPABASE_URL,
+    appSupabaseServiceRoleKey: process.env.APP_SUPABASE_SERVICE_ROLE_KEY,
     ingestSnapshotMode: readSnapshotMode(process.env.INGEST_SNAPSHOT_MODE),
     ingestSnapshotLocalDir: process.env.INGEST_SNAPSHOT_LOCAL_DIR ?? "./snapshots",
     ingestSnapshotBucket:
       process.env.INGEST_SNAPSHOT_BUCKET ?? "rekindle-ingestion-snapshots",
+    reconciliationSpikeThreshold: readPositiveInteger(
+      process.env.INGEST_RECONCILIATION_SPIKE_THRESHOLD,
+      25
+    ),
+    reconciliationPageSize: readPositiveInteger(process.env.INGEST_RECONCILIATION_PAGE_SIZE, 500),
     logLevel: readLogLevel(process.env.INGEST_LOG_LEVEL ?? process.env.LOG_LEVEL),
     defaultLocale: process.env.INGEST_DEFAULT_LOCALE ?? process.env.DEFAULT_LOCALE ?? "en",
   }
@@ -63,6 +83,13 @@ export function assertIngestConfig(
     )
   }
 
+  if (process.env.APP_SUPABASE_KEY) {
+    throw new Error(
+      "Forbidden env var APP_SUPABASE_KEY is set. Use APP_SUPABASE_SERVICE_ROLE_KEY only. See " +
+        ENV_CONTRACT_DOC_PATH
+    )
+  }
+
   const appUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   if (appUrl && config.ingestSupabaseUrl && appUrl === config.ingestSupabaseUrl) {
     throw new Error(
@@ -74,6 +101,31 @@ export function assertIngestConfig(
   if (!config.ingestSupabaseUrl || !config.ingestSupabaseServiceRoleKey) {
     throw new Error(
       "Missing ingestion Supabase credentials. Set INGEST_SUPABASE_URL and INGEST_SUPABASE_SERVICE_ROLE_KEY. See " +
+        ENV_CONTRACT_DOC_PATH
+    )
+  }
+}
+
+export function assertPromotionReconciliationConfig(
+  config: PipelineConfig
+): asserts config is PipelineConfig & {
+  ingestSupabaseUrl: string
+  ingestSupabaseServiceRoleKey: string
+  appSupabaseUrl: string
+  appSupabaseServiceRoleKey: string
+} {
+  assertIngestConfig(config)
+
+  if (!config.appSupabaseUrl || !config.appSupabaseServiceRoleKey) {
+    throw new Error(
+      "Missing app Supabase credentials for promotion reconciliation. Set APP_SUPABASE_URL and APP_SUPABASE_SERVICE_ROLE_KEY. See " +
+        ENV_CONTRACT_DOC_PATH
+    )
+  }
+
+  if (config.appSupabaseUrl === config.ingestSupabaseUrl) {
+    throw new Error(
+      "APP_SUPABASE_URL must not match INGEST_SUPABASE_URL. App and ingestion must use separate Supabase projects. See " +
         ENV_CONTRACT_DOC_PATH
     )
   }

@@ -1,4 +1,5 @@
 import { runSource } from "./jobs/run-source.js"
+import { reconcilePromotions } from "./jobs/reconcile-promotions.js"
 import { listSources } from "./sources/registry.js"
 import { loadLocalEnvFiles } from "./config/load-env.js"
 
@@ -8,6 +9,7 @@ const help = () => {
   console.log("Commands:")
   console.log("  list-sources")
   console.log("  run-source <source_key>")
+  console.log("  reconcile-promotions")
 }
 
 async function main(): Promise<void> {
@@ -31,6 +33,12 @@ async function main(): Promise<void> {
         throw new Error("Missing source key. Usage: run-source <source_key>")
       }
       const result = await runSource(sourceKey)
+      console.log(JSON.stringify(result, null, 2))
+      return
+    }
+
+    case "reconcile-promotions": {
+      const result = await reconcilePromotions()
       console.log(JSON.stringify(result, null, 2))
       return
     }

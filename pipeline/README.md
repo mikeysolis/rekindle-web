@@ -6,11 +6,18 @@ Current CLI commands:
 
 - `list-sources`
 - `run-source <source_key>`
+- `reconcile-promotions`
 
 Source fixture tests:
 
 - `npm run pipeline:test:rak`
 - `npm run pipeline:test:quality`
+- `npm run pipeline:test:reconcile`
+
+Promotion reconciliation:
+
+- `npm run pipeline:reconcile-promotions`
+- intended cadence: hourly
 
 Deliberately excluded from CLI:
 

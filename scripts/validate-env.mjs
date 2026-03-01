@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 const CONTRACT_DOC_PATH = "docs/specs/ingestion/14_environment_and_secrets_contract.md";
 const ENV_FILE_PATHS = [".env.local", ".env", "pipeline/.env"];
-const VALID_RUNTIMES = new Set(["studio", "pipeline"]);
+const VALID_RUNTIMES = new Set(["studio", "pipeline", "pipeline-reconcile"]);
 
 function parseRuntimeArg() {
   const args = process.argv.slice(2);
@@ -76,6 +76,15 @@ function loadLocalEnvFiles() {
 }
 
 function requiredKeysForRuntime(runtime) {
+  if (runtime === "pipeline-reconcile") {
+    return [
+      "INGEST_SUPABASE_URL",
+      "INGEST_SUPABASE_SERVICE_ROLE_KEY",
+      "APP_SUPABASE_URL",
+      "APP_SUPABASE_SERVICE_ROLE_KEY",
+    ];
+  }
+
   if (runtime === "pipeline") {
     return ["INGEST_SUPABASE_URL", "INGEST_SUPABASE_SERVICE_ROLE_KEY"];
   }
@@ -110,11 +119,24 @@ function collectErrors(runtime) {
     );
   }
 
+  if (process.env.APP_SUPABASE_KEY) {
+    errors.push(
+      "Forbidden env var detected: APP_SUPABASE_KEY (use APP_SUPABASE_SERVICE_ROLE_KEY only).",
+    );
+  }
+
   const appUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const ingestUrl = process.env.INGEST_SUPABASE_URL;
   if (appUrl && ingestUrl && appUrl === ingestUrl) {
     errors.push(
       "Invalid configuration: NEXT_PUBLIC_SUPABASE_URL and INGEST_SUPABASE_URL must target different projects.",
+    );
+  }
+
+  const appServiceUrl = process.env.APP_SUPABASE_URL;
+  if (runtime === "pipeline-reconcile" && appServiceUrl && ingestUrl && appServiceUrl === ingestUrl) {
+    errors.push(
+      "Invalid configuration: APP_SUPABASE_URL and INGEST_SUPABASE_URL must target different projects.",
     );
   }
 

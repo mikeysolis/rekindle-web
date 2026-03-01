@@ -190,9 +190,22 @@ Acceptance criteria:
 Dependencies: ING-003
 
 Checklist:
-- [ ] Implement write order and failure semantics from `04_data_model_and_contracts.md`.
-- [ ] Implement hourly reconciliation job for cross-DB repair.
-- [ ] Emit reconciliation metrics and alert on spikes.
+- [x] Implement write order and failure semantics from `04_data_model_and_contracts.md`.
+- [x] Implement hourly reconciliation job for cross-DB repair.
+- [x] Emit reconciliation metrics and alert on spikes.
+
+Verification note:
+1. Studio promotion now follows required write order in `lib/studio/ingestion.ts`:
+   - creates `ingest_sync_log` pending row before app draft write
+   - finalizes pending row to `success` or `failed`
+   - keeps candidate status unchanged when app draft write fails
+2. Promotion now surfaces non-blocking warnings when ingestion status/log updates fail after successful app draft write, preserving idempotent retry behavior.
+3. Added cross-DB reconciliation job and CLI command:
+   - `pipeline/src/jobs/reconcile-promotions.ts`
+   - `npm run pipeline:reconcile-promotions`
+4. Reconciliation emits structured metrics (`planned*`, `repaired*`, `failed*`, `totalRepairs`) and logs a warning when repair volume exceeds `INGEST_RECONCILIATION_SPIKE_THRESHOLD`.
+5. Added regression tests:
+   - `pipeline/src/jobs/reconcile-promotions.test.ts`
 
 Acceptance criteria:
 1. Promotion remains idempotent under retries.
@@ -472,13 +485,13 @@ After Epic 4:
 
 ## 13) Immediate Next 10 Tasks
 
-1. [ ] ING-001
-2. [ ] ING-002
-3. [ ] ING-003
-4. [ ] ING-004
-5. [ ] ING-005
-6. [ ] ING-010
-7. [ ] ING-011
-8. [ ] ING-012
+1. [x] ING-001
+2. [x] ING-002
+3. [x] ING-003
+4. [x] ING-004
+5. [x] ING-005
+6. [x] ING-010
+7. [x] ING-011
+8. [x] ING-012
 9. [ ] ING-013
 10. [ ] ING-014
