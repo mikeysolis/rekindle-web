@@ -14,6 +14,8 @@ export interface PipelineConfig {
   ingestSnapshotBucket: string
   reconciliationSpikeThreshold: number
   reconciliationPageSize: number
+  complianceRobotsTtlDays: number
+  complianceTermsTtlDays: number
   logLevel: LogLevel
   defaultLocale: string
 }
@@ -58,6 +60,14 @@ export function loadConfig(): PipelineConfig {
       25
     ),
     reconciliationPageSize: readPositiveInteger(process.env.INGEST_RECONCILIATION_PAGE_SIZE, 500),
+    complianceRobotsTtlDays: readPositiveInteger(
+      process.env.INGEST_COMPLIANCE_ROBOTS_TTL_DAYS,
+      7
+    ),
+    complianceTermsTtlDays: readPositiveInteger(
+      process.env.INGEST_COMPLIANCE_TERMS_TTL_DAYS,
+      30
+    ),
     logLevel: readLogLevel(process.env.INGEST_LOG_LEVEL ?? process.env.LOG_LEVEL),
     defaultLocale: process.env.INGEST_DEFAULT_LOCALE ?? process.env.DEFAULT_LOCALE ?? "en",
   }

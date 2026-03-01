@@ -2,6 +2,11 @@ import type { Logger } from "../core/logger.js"
 
 export interface SourceRegistryRuntimeRecord {
   sourceKey: string
+  state: string
+  approvedForProd: boolean
+  legalRiskLevel: string
+  robotsCheckedAt: string | null
+  termsCheckedAt: string | null
   cadence: string | null
   maxRps: number | null
   maxConcurrency: number | null
@@ -83,14 +88,39 @@ export interface SourceHealthComputationResult {
   metadataJson: Record<string, unknown>
 }
 
+export type ComplianceFailureSeverity = "warn" | "critical"
+export type ComplianceTransitionState = "degraded" | "paused"
+
+export interface CompliancePreRunInput {
+  sourceKey: string
+  runtimeRecord: SourceRegistryRuntimeRecord | null
+  nowIso: string
+  robotsPolicyTtlDays: number
+  termsPolicyTtlDays: number
+}
+
+export interface CompliancePreRunResult {
+  isCompliant: boolean
+  shouldBlock: boolean
+  reasonCodes: string[]
+  transitionState: ComplianceTransitionState | null
+  severity: ComplianceFailureSeverity | null
+  message: string | null
+  evidenceBundle: Record<string, unknown> | null
+}
+
 const DEFAULT_MAX_RPS = 1
 const DEFAULT_MAX_CONCURRENCY = 1
 const DEFAULT_TIMEOUT_SECONDS = 30
 const DEFAULT_RETRY_MAX_ATTEMPTS = 2
 const DEFAULT_RETRY_BACKOFF_MS = 750
 const DEFAULT_RETRY_BACKOFF_MULTIPLIER = 2
+export const DEFAULT_COMPLIANCE_ROBOTS_TTL_DAYS = 7
+export const DEFAULT_COMPLIANCE_TERMS_TTL_DAYS = 30
 const ROLLING_RATE_ALPHA = 0.2
 const HEALTH_SCORE_VERSION = "ing022_v1"
+const COMPLIANCE_PRECHECK_VERSION = "ing050_v1"
+const MAX_COMPLIANCE_ALERT_HISTORY = 20
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value))
@@ -115,6 +145,34 @@ const asRecord = (value: unknown): Record<string, unknown> => {
     return {}
   }
   return value as Record<string, unknown>
+}
+
+const asBoolean = (value: unknown): boolean | null => {
+  if (typeof value === "boolean") {
+    return value
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase()
+    if (normalized === "true") return true
+    if (normalized === "false") return false
+  }
+
+  return null
+}
+
+const asNonNegativeInteger = (value: unknown, fallback: number): number => {
+  const numeric = asFiniteNumber(value)
+  if (numeric === null) {
+    return fallback
+  }
+
+  const rounded = Math.round(numeric)
+  if (rounded < 0) {
+    return fallback
+  }
+
+  return rounded
 }
 
 const asStringArray = (value: unknown): string[] => {
@@ -193,6 +251,250 @@ export const resolveSourceRuntimePolicy = (
       1,
       5
     ),
+  }
+}
+
+const readComplianceLegalHold = (
+  metadataJson: Record<string, unknown>,
+  nowIso: string
+): boolean => {
+  const compliance = asRecord(metadataJson.compliance)
+
+  const legalHoldFlag = asBoolean(compliance.legal_hold)
+  if (legalHoldFlag === true) {
+    return true
+  }
+
+  const statusRaw = compliance.status
+  const status =
+    typeof statusRaw === "string" ? statusRaw.trim().toLowerCase() : ""
+  if (status === "legal_hold" || status === "hold" || status === "blocked") {
+    return true
+  }
+
+  const holdUntilRaw = compliance.legal_hold_until
+  if (typeof holdUntilRaw === "string") {
+    const holdUntilMs = Date.parse(holdUntilRaw)
+    const nowMs = Date.parse(nowIso)
+    if (Number.isFinite(holdUntilMs) && Number.isFinite(nowMs) && holdUntilMs > nowMs) {
+      return true
+    }
+  }
+
+  return false
+}
+
+const computeCheckAgeDays = (checkedAt: string | null, nowMs: number): number | null => {
+  if (!checkedAt) {
+    return null
+  }
+
+  const checkedMs = Date.parse(checkedAt)
+  if (!Number.isFinite(checkedMs)) {
+    return null
+  }
+
+  const ageMs = Math.max(0, nowMs - checkedMs)
+  return Math.floor(ageMs / (24 * 60 * 60 * 1000))
+}
+
+const COMPLIANCE_REASON_MESSAGES: Record<string, string> = {
+  source_not_registered: "source is not registered in ingest_source_registry",
+  source_not_active: "source state is not active",
+  source_not_approved: "source is not approved for production",
+  robots_check_missing: "robots review timestamp is missing",
+  robots_check_invalid: "robots review timestamp is invalid",
+  robots_check_stale: "robots review timestamp is older than policy TTL",
+  terms_check_missing: "terms review timestamp is missing",
+  terms_check_invalid: "terms review timestamp is invalid",
+  terms_check_stale: "terms review timestamp is older than policy TTL",
+  legal_hold_active: "source is on legal hold",
+}
+
+const formatComplianceFailureMessage = (reasonCodes: string[]): string => {
+  if (reasonCodes.length === 0) {
+    return "Compliance pre-run check passed."
+  }
+
+  return `Compliance pre-run check failed: ${reasonCodes
+    .map((code) => COMPLIANCE_REASON_MESSAGES[code] ?? code)
+    .join("; ")}.`
+}
+
+export const evaluateSourceCompliancePreRun = (
+  input: CompliancePreRunInput
+): CompliancePreRunResult => {
+  const robotsPolicyTtlDays = Math.max(
+    1,
+    asNonNegativeInteger(input.robotsPolicyTtlDays, DEFAULT_COMPLIANCE_ROBOTS_TTL_DAYS)
+  )
+  const termsPolicyTtlDays = Math.max(
+    1,
+    asNonNegativeInteger(input.termsPolicyTtlDays, DEFAULT_COMPLIANCE_TERMS_TTL_DAYS)
+  )
+
+  const nowMs = Date.parse(input.nowIso)
+  const safeNowMs = Number.isFinite(nowMs) ? nowMs : Date.now()
+
+  if (!input.runtimeRecord) {
+    const reasonCodes = ["source_not_registered"]
+    const message = formatComplianceFailureMessage(reasonCodes)
+    return {
+      isCompliant: false,
+      shouldBlock: true,
+      reasonCodes,
+      transitionState: null,
+      severity: "critical",
+      message,
+      evidenceBundle: {
+        version: COMPLIANCE_PRECHECK_VERSION,
+        source_key: input.sourceKey,
+        checked_at: input.nowIso,
+        status: "failed",
+        reason_codes: reasonCodes,
+        severity: "critical",
+        transition_state: null,
+        robots_policy_ttl_days: robotsPolicyTtlDays,
+        terms_policy_ttl_days: termsPolicyTtlDays,
+      },
+    }
+  }
+
+  const runtime = input.runtimeRecord
+  const reasonCodes: string[] = []
+  const metadataJson = asRecord(runtime.metadataJson)
+  const legalHoldActive = readComplianceLegalHold(metadataJson, input.nowIso)
+
+  if (runtime.state !== "active") {
+    reasonCodes.push("source_not_active")
+  }
+
+  if (!runtime.approvedForProd) {
+    reasonCodes.push("source_not_approved")
+  }
+
+  if (legalHoldActive) {
+    reasonCodes.push("legal_hold_active")
+  }
+
+  const robotsAgeDays = computeCheckAgeDays(runtime.robotsCheckedAt, safeNowMs)
+  if (!runtime.robotsCheckedAt) {
+    reasonCodes.push("robots_check_missing")
+  } else if (robotsAgeDays === null) {
+    reasonCodes.push("robots_check_invalid")
+  } else if (robotsAgeDays > robotsPolicyTtlDays) {
+    reasonCodes.push("robots_check_stale")
+  }
+
+  const termsAgeDays = computeCheckAgeDays(runtime.termsCheckedAt, safeNowMs)
+  if (!runtime.termsCheckedAt) {
+    reasonCodes.push("terms_check_missing")
+  } else if (termsAgeDays === null) {
+    reasonCodes.push("terms_check_invalid")
+  } else if (termsAgeDays > termsPolicyTtlDays) {
+    reasonCodes.push("terms_check_stale")
+  }
+
+  if (reasonCodes.length === 0) {
+    return {
+      isCompliant: true,
+      shouldBlock: false,
+      reasonCodes: [],
+      transitionState: null,
+      severity: null,
+      message: null,
+      evidenceBundle: {
+        version: COMPLIANCE_PRECHECK_VERSION,
+        source_key: runtime.sourceKey,
+        checked_at: input.nowIso,
+        status: "passed",
+        state: runtime.state,
+        approved_for_prod: runtime.approvedForProd,
+        legal_risk_level: runtime.legalRiskLevel,
+        legal_hold_active: legalHoldActive,
+        robots_checked_at: runtime.robotsCheckedAt,
+        terms_checked_at: runtime.termsCheckedAt,
+        robots_check_age_days: robotsAgeDays,
+        terms_check_age_days: termsAgeDays,
+        robots_policy_ttl_days: robotsPolicyTtlDays,
+        terms_policy_ttl_days: termsPolicyTtlDays,
+        reason_codes: [],
+      },
+    }
+  }
+
+  const criticalFailure = reasonCodes.some(
+    (code) =>
+      code === "source_not_approved" ||
+      code === "legal_hold_active" ||
+      code === "source_not_registered"
+  )
+
+  const severity: ComplianceFailureSeverity = criticalFailure ? "critical" : "warn"
+  const transitionState: ComplianceTransitionState | null =
+    runtime.state === "active" ? (criticalFailure ? "paused" : "degraded") : null
+  const message = formatComplianceFailureMessage(reasonCodes)
+
+  return {
+    isCompliant: false,
+    shouldBlock: true,
+    reasonCodes,
+    transitionState,
+    severity,
+    message,
+    evidenceBundle: {
+      version: COMPLIANCE_PRECHECK_VERSION,
+      source_key: runtime.sourceKey,
+      checked_at: input.nowIso,
+      status: "failed",
+      state: runtime.state,
+      approved_for_prod: runtime.approvedForProd,
+      legal_risk_level: runtime.legalRiskLevel,
+      legal_hold_active: legalHoldActive,
+      robots_checked_at: runtime.robotsCheckedAt,
+      terms_checked_at: runtime.termsCheckedAt,
+      robots_check_age_days: robotsAgeDays,
+      terms_check_age_days: termsAgeDays,
+      robots_policy_ttl_days: robotsPolicyTtlDays,
+      terms_policy_ttl_days: termsPolicyTtlDays,
+      reason_codes: reasonCodes,
+      severity,
+      transition_state: transitionState,
+    },
+  }
+}
+
+export const mergeComplianceAlertMetadata = (params: {
+  metadataJson: Record<string, unknown>
+  evidenceBundle: Record<string, unknown>
+  nowIso: string
+  failed: boolean
+}): Record<string, unknown> => {
+  const metadataJson = asRecord(params.metadataJson)
+  const compliance = asRecord(metadataJson.compliance)
+
+  const historyRaw = compliance.alert_history
+  const priorHistory = Array.isArray(historyRaw)
+    ? historyRaw.filter(
+        (entry): entry is Record<string, unknown> =>
+          Boolean(entry) && typeof entry === "object" && !Array.isArray(entry)
+      )
+    : []
+
+  const nextHistory = params.failed
+    ? [params.evidenceBundle, ...priorHistory].slice(0, MAX_COMPLIANCE_ALERT_HISTORY)
+    : priorHistory
+
+  return {
+    ...metadataJson,
+    compliance: {
+      ...compliance,
+      version: COMPLIANCE_PRECHECK_VERSION,
+      last_pre_run_check_at: params.nowIso,
+      last_pre_run_check_status: params.failed ? "failed" : "passed",
+      last_pre_run_check: params.evidenceBundle,
+      alert_history: nextHistory,
+    },
   }
 }
 

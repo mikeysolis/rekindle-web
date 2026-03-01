@@ -10,6 +10,13 @@ Current commands:
 4. `pipeline:source-probe -- <url_or_domain>`
 5. `pipeline:reconcile-promotions`
 
+`run-source` runtime guardrails (ING-050):
+
+1. Block unless source registry row is `active` and `approved_for_prod=true`.
+2. Block when robots/terms review timestamps exceed compliance TTL.
+3. Block legal-hold sources and auto-transition lifecycle to `paused`/`degraded` based on severity.
+4. `--force` may bypass cadence only; it does not bypass compliance gates.
+
 Planned commands:
 
 1. `pipeline:run-all`

@@ -19,7 +19,9 @@ import {
   computeSourceHealthPatch,
   createOperationRateLimiter,
   evaluateCadence,
+  evaluateSourceCompliancePreRun,
   filterUrlsByPatterns,
+  mergeComplianceAlertMetadata,
   resolveSourceRuntimePolicy,
   runWithRetry,
 } from "./runtime-controls.js"
@@ -161,10 +163,64 @@ export async function runSource(
   const snapshotWriter = createSnapshotWriter(config, logger, ingestClient)
 
   const sourceRegistryRuntime = await durable.getSourceRegistryRuntime(sourceKey)
-  if (!sourceRegistryRuntime) {
-    logger.warn("Source is missing ingest_source_registry entry; runtime defaults applied", {
-      sourceKey,
-    })
+
+  const complianceCheckedAt = new Date().toISOString()
+  const complianceDecision = evaluateSourceCompliancePreRun({
+    sourceKey,
+    runtimeRecord: sourceRegistryRuntime,
+    nowIso: complianceCheckedAt,
+    robotsPolicyTtlDays: config.complianceRobotsTtlDays,
+    termsPolicyTtlDays: config.complianceTermsTtlDays,
+  })
+
+  if (complianceDecision.shouldBlock) {
+    const evidenceBundle = complianceDecision.evidenceBundle ?? {
+      source_key: sourceKey,
+      checked_at: complianceCheckedAt,
+      reason_codes: complianceDecision.reasonCodes,
+    }
+
+    const logMethod = complianceDecision.severity === "critical" ? logger.error : logger.warn
+    logMethod("Compliance pre-run check failed", evidenceBundle)
+
+    if (sourceRegistryRuntime) {
+      try {
+        const metadataJson = mergeComplianceAlertMetadata({
+          metadataJson: sourceRegistryRuntime.metadataJson,
+          evidenceBundle,
+          nowIso: complianceCheckedAt,
+          failed: true,
+        })
+        await durable.updateSourceRegistryRuntime(sourceKey, {
+          metadataJson,
+        })
+
+        if (complianceDecision.transitionState && sourceRegistryRuntime.state === "active") {
+          const reason = `ING-050 compliance pre-run check failure (${complianceDecision.reasonCodes.join(", ")})`
+          await durable.setSourceLifecycleState({
+            sourceKey,
+            state: complianceDecision.transitionState,
+            reason,
+            actorUserId: null,
+          })
+
+          logger.warn("Compliance pre-run auto-transitioned source lifecycle state", {
+            sourceKey,
+            from_state: sourceRegistryRuntime.state,
+            to_state: complianceDecision.transitionState,
+            reason_codes: complianceDecision.reasonCodes,
+          })
+        }
+      } catch (error) {
+        logger.error("Compliance failure handling could not persist evidence or lifecycle transition", {
+          sourceKey,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+
+    const forceNote = options.force ? " --force cannot bypass compliance gates." : ""
+    throw new Error(`${complianceDecision.message ?? "Compliance pre-run check failed."}${forceNote}`)
   }
 
   const runtimePolicy = resolveSourceRuntimePolicy(sourceRegistryRuntime)
@@ -172,16 +228,6 @@ export async function runSource(
     runtimePolicy.cadence,
     sourceRegistryRuntime?.lastRunAt ?? null
   )
-
-  if (
-    sourceRegistryRuntime &&
-    (sourceRegistryRuntime.state === "paused" || sourceRegistryRuntime.state === "retired") &&
-    !options.force
-  ) {
-    throw new Error(
-      `Source "${sourceKey}" is ${sourceRegistryRuntime.state}. Use --force to run manually.`
-    )
-  }
 
   logger.info("Resolved source runtime policy", {
     sourceKey,

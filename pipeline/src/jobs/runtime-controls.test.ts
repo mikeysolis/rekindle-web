@@ -4,7 +4,9 @@ import test from "node:test"
 import {
   computeSourceHealthPatch,
   evaluateCadence,
+  evaluateSourceCompliancePreRun,
   filterUrlsByPatterns,
+  mergeComplianceAlertMetadata,
   parseCadenceIntervalMs,
   resolveSourceRuntimePolicy,
   runWithRetry,
@@ -14,6 +16,11 @@ import {
 test("resolveSourceRuntimePolicy applies registry + metadata retry settings", () => {
   const runtime: SourceRegistryRuntimeRecord = {
     sourceKey: "rak",
+    state: "active",
+    approvedForProd: true,
+    legalRiskLevel: "low",
+    robotsCheckedAt: "2026-02-27T00:00:00.000Z",
+    termsCheckedAt: "2026-02-20T00:00:00.000Z",
     cadence: "FREQ=DAILY;BYHOUR=2;BYMINUTE=0",
     maxRps: 2.5,
     maxConcurrency: 4,
@@ -154,4 +161,109 @@ test("computeSourceHealthPatch updates rolling rates and health metadata", () =>
   assert.equal(health.observed_failed_runs, 0)
   assert.equal(health.consecutive_low_quality_runs, 0)
   assert.equal(health.skipped_by_cadence, false)
+})
+
+test("evaluateSourceCompliancePreRun blocks non-compliant active source and suggests lifecycle transition", () => {
+  const runtime: SourceRegistryRuntimeRecord = {
+    sourceKey: "rak",
+    state: "active",
+    approvedForProd: true,
+    legalRiskLevel: "low",
+    robotsCheckedAt: "2026-02-01T00:00:00.000Z",
+    termsCheckedAt: "2026-01-01T00:00:00.000Z",
+    cadence: "FREQ=DAILY;BYHOUR=2;BYMINUTE=0",
+    maxRps: 1,
+    maxConcurrency: 1,
+    timeoutSeconds: 30,
+    includeUrlPatterns: [],
+    excludeUrlPatterns: [],
+    metadataJson: {
+      compliance: {
+        legal_hold: false,
+      },
+    },
+    lastRunAt: null,
+    lastSuccessAt: null,
+    rollingPromotionRate30d: null,
+    rollingFailureRate30d: null,
+  }
+
+  const result = evaluateSourceCompliancePreRun({
+    sourceKey: "rak",
+    runtimeRecord: runtime,
+    nowIso: "2026-03-01T00:00:00.000Z",
+    robotsPolicyTtlDays: 7,
+    termsPolicyTtlDays: 30,
+  })
+
+  assert.equal(result.isCompliant, false)
+  assert.equal(result.shouldBlock, true)
+  assert.equal(result.severity, "warn")
+  assert.equal(result.transitionState, "degraded")
+  assert.ok(result.reasonCodes.includes("robots_check_stale"))
+  assert.ok(result.reasonCodes.includes("terms_check_stale"))
+  assert.ok(result.message?.includes("Compliance pre-run check failed"))
+})
+
+test("evaluateSourceCompliancePreRun escalates to pause for legal hold", () => {
+  const runtime: SourceRegistryRuntimeRecord = {
+    sourceKey: "rak",
+    state: "active",
+    approvedForProd: true,
+    legalRiskLevel: "high",
+    robotsCheckedAt: "2026-02-27T00:00:00.000Z",
+    termsCheckedAt: "2026-02-27T00:00:00.000Z",
+    cadence: "FREQ=DAILY;BYHOUR=2;BYMINUTE=0",
+    maxRps: 1,
+    maxConcurrency: 1,
+    timeoutSeconds: 30,
+    includeUrlPatterns: [],
+    excludeUrlPatterns: [],
+    metadataJson: {
+      compliance: {
+        legal_hold: true,
+      },
+    },
+    lastRunAt: null,
+    lastSuccessAt: null,
+    rollingPromotionRate30d: null,
+    rollingFailureRate30d: null,
+  }
+
+  const result = evaluateSourceCompliancePreRun({
+    sourceKey: "rak",
+    runtimeRecord: runtime,
+    nowIso: "2026-03-01T00:00:00.000Z",
+    robotsPolicyTtlDays: 7,
+    termsPolicyTtlDays: 30,
+  })
+
+  assert.equal(result.isCompliant, false)
+  assert.equal(result.severity, "critical")
+  assert.equal(result.transitionState, "paused")
+  assert.ok(result.reasonCodes.includes("legal_hold_active"))
+})
+
+test("mergeComplianceAlertMetadata appends bounded alert history on failures", () => {
+  const merged = mergeComplianceAlertMetadata({
+    metadataJson: {
+      compliance: {
+        alert_history: Array.from({ length: 20 }, (_value, index) => ({
+          id: `prior-${index}`,
+        })),
+      },
+    },
+    evidenceBundle: {
+      id: "new-alert",
+      reason_codes: ["robots_check_stale"],
+    },
+    nowIso: "2026-03-01T00:00:00.000Z",
+    failed: true,
+  })
+
+  const compliance = (merged.compliance as Record<string, unknown>) ?? {}
+  const history = (compliance.alert_history as Array<Record<string, unknown>>) ?? []
+  assert.equal(compliance.last_pre_run_check_status, "failed")
+  assert.equal(history.length, 20)
+  assert.equal(history[0]?.id, "new-alert")
 })

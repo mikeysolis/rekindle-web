@@ -38,6 +38,8 @@ Optional:
 6. `INGEST_ENVIRONMENT` (`local|staging|...`) required for guarded reset operations
 7. `INGEST_RECONCILIATION_SPIKE_THRESHOLD` (default `25`)
 8. `INGEST_RECONCILIATION_PAGE_SIZE` (default `500`)
+9. `INGEST_COMPLIANCE_ROBOTS_TTL_DAYS` (default `7`)
+10. `INGEST_COMPLIANCE_TERMS_TTL_DAYS` (default `30`)
 
 ## 3) Canonical Namespace Rules
 

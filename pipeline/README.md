@@ -48,6 +48,12 @@ Source module contract:
     - auto-degrade on sustained failure/quality drop
     - degraded cadence downgrade to low-frequency probe mode
     - lifecycle alert evidence persisted in `metadata_json.lifecycle.*`
+  - compliance pre-run checks (ING-050):
+    - source must be `active` and `approved_for_prod=true`
+    - `robots_checked_at` and `terms_checked_at` must be within policy TTL
+    - legal hold sources are blocked
+    - compliance failures block execution before extraction and emit lifecycle/compliance evidence
+    - `--force` does not bypass compliance gates
 
 Promotion reconciliation:
 

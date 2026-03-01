@@ -642,9 +642,29 @@ Gate C (Epic 4 exit; minimum 28-day evaluation window):
 Dependencies: ING-004, ING-022
 
 Checklist:
-- [ ] Validate source is active and approved before scheduling/execution.
-- [ ] Enforce policy TTL on robots/terms checks.
-- [ ] Auto-pause or degrade sources on compliance failure.
+- [x] Validate source is active and approved before scheduling/execution.
+- [x] Enforce policy TTL on robots/terms checks.
+- [x] Auto-pause or degrade sources on compliance failure.
+
+Verification note:
+1. Added runtime compliance pre-check engine (`pipeline/src/jobs/runtime-controls.ts`):
+   - blocks runs when source is non-active, non-approved, legal-hold, or stale/missing robots/terms checks
+   - enforces policy TTL defaults (`robots=7d`, `terms=30d`) with env overrides
+     (`INGEST_COMPLIANCE_ROBOTS_TTL_DAYS`, `INGEST_COMPLIANCE_TERMS_TTL_DAYS`)
+   - emits structured evidence bundle + bounded compliance alert history metadata.
+2. Wired `run-source` to execute compliance checks before run execution (`pipeline/src/jobs/run-source.ts`):
+   - blocks before discovery/extraction starts
+   - auto-transitions `active -> paused|degraded` on compliance failure via audited RPC
+   - persists compliance failure evidence in `metadata_json.compliance.*`
+   - `--force` no longer bypasses compliance gates.
+3. Extended ingestion runtime data contract:
+   - source runtime record now includes `robots_checked_at` and `terms_checked_at`
+   (`pipeline/src/durable-store/repository.ts`).
+4. Added runtime tests for compliance behavior:
+   - stale TTL block path
+   - legal-hold critical pause path
+   - bounded alert history merge
+   (`pipeline/src/jobs/runtime-controls.test.ts`).
 
 Acceptance criteria:
 1. Non-compliant sources are blocked before extraction starts.
