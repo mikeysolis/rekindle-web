@@ -44,6 +44,10 @@ Source module contract:
   - `strategy_order` (scored + fallback ladder within approved strategies)
   - include/exclude URL patterns
   - retry budget via `metadata_json.runtime.*`
+  - lifecycle automation hooks:
+    - auto-degrade on sustained failure/quality drop
+    - degraded cadence downgrade to low-frequency probe mode
+    - lifecycle alert evidence persisted in `metadata_json.lifecycle.*`
 
 Promotion reconciliation:
 

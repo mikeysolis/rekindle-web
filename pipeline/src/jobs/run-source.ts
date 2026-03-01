@@ -31,6 +31,10 @@ import {
   type IngestStrategy,
   type StrategyExecutionAttempt,
 } from "./strategy-selection.js"
+import {
+  evaluateLifecycleAutomation,
+  mergeLifecycleAlertMetadata,
+} from "./lifecycle-automation.js"
 
 export interface RunSourceOptions {
   respectCadence?: boolean
@@ -73,6 +77,18 @@ const readExtractorVersion = (diagnostics: unknown): string | null => {
     return extractorVersion
   }
   return null
+}
+
+const nextConfigVersion = (currentVersion: string, nowIso: string): string => {
+  const trimmed = currentVersion.trim()
+  const parsed = Number.parseInt(trimmed, 10)
+  if (Number.isFinite(parsed) && String(parsed) === trimmed) {
+    return String(parsed + 1)
+  }
+
+  const stamp = nowIso.replace(/[-:.TZ]/g, "").slice(0, 14)
+  const base = trimmed.length > 0 ? trimmed : "1"
+  return `${base}-auto-${stamp}`
 }
 
 const extractPage = async (params: {
@@ -656,11 +672,78 @@ export async function runSource(
           strategyAttempts
         )
 
+        const lifecycleDecision = evaluateLifecycleAutomation({
+          sourceKey,
+          state: sourceRegistryRuntime.state,
+          cadence: sourceRegistryRuntime.cadence,
+          skippedByCadence,
+          finalRunStatus,
+          rollingFailureRate30d: patch.rollingFailureRate30d,
+          rollingPromotionRate30d: patch.rollingPromotionRate30d,
+          metadataJson: patch.metadataJson,
+          nowIso,
+        })
+
+        if (lifecycleDecision.evidenceBundle) {
+          patch.metadataJson = mergeLifecycleAlertMetadata({
+            metadataJson: patch.metadataJson,
+            evidenceBundle: lifecycleDecision.evidenceBundle,
+            transitionedToDegraded: lifecycleDecision.shouldTransitionToDegraded,
+            downgradedCadence: lifecycleDecision.shouldDowngradeCadence,
+            nowIso,
+          })
+
+          const logMethod =
+            lifecycleDecision.alertSeverity === "critical" ? logger.error : logger.warn
+
+          logMethod("Lifecycle automation alert", lifecycleDecision.evidenceBundle)
+        }
+
         const updated = await durable.updateSourceRegistryRuntime(sourceKey, patch)
         if (!updated) {
           logger.warn("Source runtime health patch skipped because source registry row was not found", {
             sourceKey,
           })
+        } else {
+          if (lifecycleDecision.shouldTransitionToDegraded) {
+            const reason = lifecycleDecision.reason ?? "Lifecycle automation degraded source"
+            await durable.setSourceLifecycleState({
+              sourceKey,
+              state: "degraded",
+              reason,
+              actorUserId: null,
+            })
+
+            logger.warn("Lifecycle automation transitioned source to degraded", {
+              sourceKey,
+              reason,
+              trigger_codes: lifecycleDecision.triggerCodes,
+            })
+          }
+
+          if (lifecycleDecision.shouldDowngradeCadence && lifecycleDecision.degradedCadence) {
+            const targetVersion = nextConfigVersion(sourceRegistryRuntime.configVersion, nowIso)
+            const reason =
+              lifecycleDecision.reason ??
+              "Lifecycle automation downgraded cadence for degraded source"
+
+            await durable.updateSourceConfig({
+              sourceKey,
+              patch: {
+                cadence: lifecycleDecision.degradedCadence,
+              },
+              configVersion: targetVersion,
+              reason,
+              actorUserId: null,
+            })
+
+            logger.warn("Lifecycle automation downgraded source cadence", {
+              sourceKey,
+              previous_cadence: sourceRegistryRuntime.cadence,
+              new_cadence: lifecycleDecision.degradedCadence,
+              config_version: targetVersion,
+            })
+          }
         }
       } catch (error) {
         logger.warn("Failed to update source runtime health metrics", {

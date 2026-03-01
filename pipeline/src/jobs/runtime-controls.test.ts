@@ -150,5 +150,8 @@ test("computeSourceHealthPatch updates rolling rates and health metadata", () =>
   assert.equal(health.version, "ing022_v1")
   assert.equal(health.last_run_status, "partial")
   assert.equal(health.consecutive_failures, 0)
+  assert.equal(health.observed_runs, 1)
+  assert.equal(health.observed_failed_runs, 0)
+  assert.equal(health.consecutive_low_quality_runs, 0)
   assert.equal(health.skipped_by_cadence, false)
 })

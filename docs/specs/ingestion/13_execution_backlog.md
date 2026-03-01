@@ -434,9 +434,31 @@ Acceptance criteria:
 Dependencies: ING-004, ING-031
 
 Checklist:
-- [ ] Auto-mark sources degraded on sustained failure/quality drop.
-- [ ] Downgrade cadence in degraded state.
-- [ ] Trigger operator alert with evidence bundle.
+- [x] Auto-mark sources degraded on sustained failure/quality drop.
+- [x] Downgrade cadence in degraded state.
+- [x] Trigger operator alert with evidence bundle.
+
+Verification note:
+1. Added lifecycle automation policy module:
+   - `pipeline/src/jobs/lifecycle-automation.ts`.
+2. Integrated lifecycle automation into run finalization:
+   - evaluates sustained failure/quality-drop triggers from health metadata
+   - auto-transitions `active -> degraded` via audited DB function (`set_source_state`)
+   - auto-downgrades cadence for degraded sources via audited DB function (`update_source_config`)
+   - writes evidence bundle to `metadata_json.lifecycle.*`
+   - emits structured lifecycle alert logs.
+   (`pipeline/src/jobs/run-source.ts`).
+3. Expanded runtime health metadata to support sustained-trigger logic:
+   - `observed_runs`
+   - `observed_failed_runs`
+   - `consecutive_low_quality_runs`
+   (`pipeline/src/jobs/runtime-controls.ts`).
+4. Added lifecycle automation tests:
+   - `pipeline/src/jobs/lifecycle-automation.test.ts`
+   - `pipeline/src/jobs/runtime-controls.test.ts` updated assertions.
+5. Verified on 2026-03-01:
+   - `npm run pipeline:build`
+   - `npm run pipeline:test:runtime`.
 
 Acceptance criteria:
 1. Lifecycle state changes follow allowed transitions only.

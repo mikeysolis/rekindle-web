@@ -77,6 +77,14 @@ export interface SourceRegistryRuntimePatch {
   metadataJson?: Record<string, unknown>
 }
 
+export type SourceLifecycleState =
+  | "proposed"
+  | "approved_for_trial"
+  | "active"
+  | "degraded"
+  | "paused"
+  | "retired"
+
 export interface SourceHealthRow {
   sourceKey: string
   displayName: string
@@ -286,6 +294,52 @@ export class DurableStoreRepository {
 
     if (error) {
       throw new Error(`Failed to update source registry runtime (${sourceKey}): ${error.message}`)
+    }
+
+    return Boolean(data)
+  }
+
+  async setSourceLifecycleState(params: {
+    sourceKey: string
+    state: SourceLifecycleState
+    reason: string
+    actorUserId?: string | null
+  }): Promise<boolean> {
+    const { data, error } = await this.client.rpc("set_source_state", {
+      p_source_key: params.sourceKey,
+      p_state: params.state,
+      p_reason: params.reason,
+      p_actor_user_id: params.actorUserId ?? null,
+    })
+
+    if (error) {
+      throw new Error(
+        `Failed to set source lifecycle state (${params.sourceKey} -> ${params.state}): ${error.message}`
+      )
+    }
+
+    return Boolean(data)
+  }
+
+  async updateSourceConfig(params: {
+    sourceKey: string
+    patch: Record<string, unknown>
+    configVersion: string
+    reason: string
+    actorUserId?: string | null
+  }): Promise<boolean> {
+    const { data, error } = await this.client.rpc("update_source_config", {
+      p_source_key: params.sourceKey,
+      p_patch: params.patch,
+      p_config_version: params.configVersion,
+      p_actor_user_id: params.actorUserId ?? null,
+      p_reason: params.reason,
+    })
+
+    if (error) {
+      throw new Error(
+        `Failed to update source config (${params.sourceKey}): ${error.message}`
+      )
     }
 
     return Boolean(data)

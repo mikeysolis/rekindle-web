@@ -458,6 +458,27 @@ const readPriorConsecutiveFailures = (metadataJson: Record<string, unknown>): nu
   return Math.max(0, Math.round(value))
 }
 
+const readPriorObservedRuns = (metadataJson: Record<string, unknown>): number => {
+  const health = asRecord(metadataJson.health)
+  const value = asFiniteNumber(health.observed_runs)
+  if (value === null) return 0
+  return Math.max(0, Math.round(value))
+}
+
+const readPriorObservedFailedRuns = (metadataJson: Record<string, unknown>): number => {
+  const health = asRecord(metadataJson.health)
+  const value = asFiniteNumber(health.observed_failed_runs)
+  if (value === null) return 0
+  return Math.max(0, Math.round(value))
+}
+
+const readPriorConsecutiveLowQualityRuns = (metadataJson: Record<string, unknown>): number => {
+  const health = asRecord(metadataJson.health)
+  const value = asFiniteNumber(health.consecutive_low_quality_runs)
+  if (value === null) return 0
+  return Math.max(0, Math.round(value))
+}
+
 const readPriorHealthScore = (metadataJson: Record<string, unknown>): number | null => {
   const health = asRecord(metadataJson.health)
   const value = asFiniteNumber(health.health_score)
@@ -470,6 +491,9 @@ export const computeSourceHealthPatch = (
 ): SourceHealthComputationResult => {
   const priorMetadata = asRecord(input.prior.metadataJson)
   const priorConsecutiveFailures = readPriorConsecutiveFailures(priorMetadata)
+  const priorObservedRuns = readPriorObservedRuns(priorMetadata)
+  const priorObservedFailedRuns = readPriorObservedFailedRuns(priorMetadata)
+  const priorConsecutiveLowQualityRuns = readPriorConsecutiveLowQualityRuns(priorMetadata)
 
   const runPromotionRate =
     input.candidateCount > 0 ? clampRate(input.curatedCandidateCount / input.candidateCount) : 0
@@ -518,6 +542,24 @@ export const computeSourceHealthPatch = (
       ? priorConsecutiveFailures + 1
       : 0
 
+  const observedRuns = input.skippedByCadence ? priorObservedRuns : priorObservedRuns + 1
+  const observedFailedRuns = input.skippedByCadence
+    ? priorObservedFailedRuns
+    : input.status === "failed"
+      ? priorObservedFailedRuns + 1
+      : priorObservedFailedRuns
+
+  const lowQualityRun =
+    !input.skippedByCadence &&
+    input.candidateCount >= 3 &&
+    input.curatedCandidateCount === 0
+
+  const consecutiveLowQualityRuns = input.skippedByCadence
+    ? priorConsecutiveLowQualityRuns
+    : lowQualityRun
+      ? priorConsecutiveLowQualityRuns + 1
+      : 0
+
   const mergedMetadata: Record<string, unknown> = {
     ...priorMetadata,
     health: {
@@ -525,8 +567,12 @@ export const computeSourceHealthPatch = (
       version: HEALTH_SCORE_VERSION,
       health_score: healthScore,
       consecutive_failures: consecutiveFailures,
+      observed_runs: observedRuns,
+      observed_failed_runs: observedFailedRuns,
+      consecutive_low_quality_runs: consecutiveLowQualityRuns,
       last_run_status: input.status,
       last_error: input.runError ?? null,
+      last_run_low_quality: lowQualityRun,
       last_run_promotion_rate: runPromotionRate,
       last_run_failure_rate: runFailureRate,
       last_run_completion_rate: runCompletionRate,

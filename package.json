@@ -19,7 +19,7 @@
     "pipeline:test:rak": "npm run pipeline:build --silent && node --test ./pipeline/dist/sources/rak/parser.test.js",
     "pipeline:test:sources": "npm run pipeline:build --silent && node --test ./pipeline/dist/sources/contract.test.js ./pipeline/dist/sources/rak/source.contract.test.js ./pipeline/dist/sources/ggia/source.contract.test.js ./pipeline/dist/sources/dosomething/source.contract.test.js ./pipeline/dist/sources/action_for_happiness/source.contract.test.js ./pipeline/dist/sources/red_cross_pdf/source.contract.test.js",
     "pipeline:test:quality": "npm run pipeline:build --silent && node --test ./pipeline/dist/core/quality.test.js",
-    "pipeline:test:runtime": "npm run pipeline:build --silent && node --test ./pipeline/dist/jobs/runtime-controls.test.js ./pipeline/dist/jobs/strategy-selection.test.js ./pipeline/dist/jobs/source-health.test.js",
+    "pipeline:test:runtime": "npm run pipeline:build --silent && node --test ./pipeline/dist/jobs/runtime-controls.test.js ./pipeline/dist/jobs/strategy-selection.test.js ./pipeline/dist/jobs/lifecycle-automation.test.js ./pipeline/dist/jobs/source-health.test.js",
     "pipeline:test:source-probe": "npm run pipeline:build --silent && node --test ./pipeline/dist/jobs/source-probe.test.js",
     "pipeline:test:reconcile": "npm run pipeline:build --silent && node --test ./pipeline/dist/jobs/reconcile-promotions.test.js",
     "pipeline:list-sources": "npm run pipeline:build --silent && node ./pipeline/dist/index.js list-sources",
