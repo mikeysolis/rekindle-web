@@ -9,6 +9,7 @@ Current commands:
 3. `pipeline:source-health [source_key]`
 4. `pipeline:source-probe -- <url_or_domain>`
 5. `pipeline:reconcile-promotions`
+6. `pipeline:incident-alerts [source_key]`
 
 `run-source` runtime guardrails (ING-050):
 
@@ -16,6 +17,21 @@ Current commands:
 2. Block when robots/terms review timestamps exceed compliance TTL.
 3. Block legal-hold sources and auto-transition lifecycle to `paused`/`degraded` based on severity.
 4. `--force` may bypass cadence only; it does not bypass compliance gates.
+
+`incident-alerts` automation contract (ING-051):
+
+1. Detects and emits alerts for:
+   - `zero_yield_anomaly`
+   - `failure_spike`
+   - `schedule_miss`
+   - `rejection_rate_surge`
+   - `compliance_failure`
+2. Assigns severity and routing:
+   - `sev1`: `ingestion-oncall`, `compliance-owner`, `product-owner`
+   - `sev2`: `ingestion-oncall`, `source-owner`
+   - `sev3`: `source-owner`
+3. Includes evidence bundle and response SLA in every alert payload.
+4. Persists bounded alert history in `ingest_source_registry.metadata_json.incidents.*`.
 
 Planned commands:
 

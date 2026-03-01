@@ -674,9 +674,28 @@ Acceptance criteria:
 Dependencies: ING-022, ING-050
 
 Checklist:
-- [ ] Alert on zero-yield anomaly, failure spikes, schedule misses, rejection-rate surges.
-- [ ] Define Sev-1/2/3 routing and response expectations.
-- [ ] Add evidence bundles to incident notifications.
+- [x] Alert on zero-yield anomaly, failure spikes, schedule misses, rejection-rate surges.
+- [x] Define Sev-1/2/3 routing and response expectations.
+- [x] Add evidence bundles to incident notifications.
+
+Verification note:
+1. Added incident alert automation job and CLI command:
+   - `incidentAlerts(sourceKey?)` in `pipeline/src/jobs/incident-alerts.ts`
+   - `pipeline:incident-alerts [source_key]` command wiring in `pipeline/src/index.ts`
+   - detects: zero-yield anomaly, failure spike, schedule miss, rejection-rate surge, compliance failure.
+2. Added severity routing/response contract in runtime alert payloads:
+   - Sev-1: oncall + compliance + product (15m ack / 60m mitigation)
+   - Sev-2: oncall + source owner (60m ack / 4h mitigation)
+   - Sev-3: source owner (4h ack / 24h mitigation).
+3. Added evidence bundle persistence for triage:
+   - bounded incident alert history in `metadata_json.incidents.alert_history`
+   - `last_alerts`, severity counts, and per-alert response SLA data.
+4. Added data support for rejection-rate surge detection:
+   - source rejection trend aggregation via editor labels + candidate source mapping
+   (`pipeline/src/durable-store/repository.ts`).
+5. Added tests:
+   - `pipeline/src/jobs/incident-alerts.test.ts`
+   - runtime suite updated to include incident alert tests.
 
 Acceptance criteria:
 1. Incident handlers can triage from alert payload without ad hoc digging.

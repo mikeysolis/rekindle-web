@@ -9,6 +9,7 @@ Current CLI commands:
 - `run-source <source_key> --respect-cadence`
 - `run-source <source_key> --force`
 - `source-health [source_key]`
+- `incident-alerts [source_key]`
 - `source-probe <url_or_domain>`
 - `source-probe <url_or_domain> --approval-action approved_for_trial`
 - `source-probe <url_or_domain> --no-create-proposal`

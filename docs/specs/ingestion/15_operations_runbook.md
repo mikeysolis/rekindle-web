@@ -21,6 +21,23 @@ Define repeatable, low-risk procedures for:
 4. Run `--dry-run` first before executing any reset command.
 5. Record incident/work item ID and operator in run notes before destructive actions.
 
+## 2.1) Incident Severity Routing SLA
+
+Alert routing and response expectations:
+
+1. Sev-1:
+   - routes: `ingestion-oncall`, `compliance-owner`, `product-owner`
+   - acknowledge within 15 minutes
+   - mitigation started within 60 minutes
+2. Sev-2:
+   - routes: `ingestion-oncall`, `source-owner`
+   - acknowledge within 60 minutes
+   - mitigation started within 4 hours
+3. Sev-3:
+   - routes: `source-owner`
+   - acknowledge within 4 hours
+   - mitigation started within 24 hours
+
 ## 3) Preflight Checklist
 
 1. Confirm which ingestion target you are operating on:

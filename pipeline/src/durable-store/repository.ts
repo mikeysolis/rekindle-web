@@ -100,6 +100,16 @@ export interface SourceHealthRow {
   metadataJson: Record<string, unknown>
 }
 
+export interface SourceRejectionRateTrend {
+  sourceKey: string
+  recentReviewedCount: number
+  recentRejectedCount: number
+  recentRejectionRate: number | null
+  priorReviewedCount: number
+  priorRejectedCount: number
+  priorRejectionRate: number | null
+}
+
 export type SourceOnboardingProbeStatus = "completed" | "failed"
 export type SourceOnboardingFetchStatus = "ok" | "partial" | "failed"
 export type SourceOnboardingApprovalAction =
@@ -164,6 +174,18 @@ const asRecord = (value: unknown): Record<string, unknown> => {
     return {}
   }
   return value as Record<string, unknown>
+}
+
+const chunkArray = <T>(items: T[], chunkSize: number): T[][] => {
+  if (chunkSize <= 0) {
+    return [items]
+  }
+
+  const chunks: T[][] = []
+  for (let index = 0; index < items.length; index += chunkSize) {
+    chunks.push(items.slice(index, index + chunkSize))
+  }
+  return chunks
 }
 
 const toSourceRegistryRuntimeRecord = (row: Record<string, unknown>): SourceRegistryRuntimeRecord => ({
@@ -371,6 +393,180 @@ export class DurableStoreRepository {
     }
 
     return ((data ?? []) as Record<string, unknown>[]).map(toSourceHealthRow)
+  }
+
+  async listSourceRejectionRateTrends(params?: {
+    sourceKeys?: string[]
+    windowDays?: number
+    nowIso?: string
+  }): Promise<SourceRejectionRateTrend[]> {
+    const normalizedKeys = params?.sourceKeys?.filter((key) => key.trim().length > 0) ?? []
+    const windowDays = Math.max(1, Math.round(params?.windowDays ?? 7))
+    const nowIso = params?.nowIso ?? new Date().toISOString()
+    const nowMs = Date.parse(nowIso)
+    const safeNowMs = Number.isFinite(nowMs) ? nowMs : Date.now()
+    const dayMs = 24 * 60 * 60 * 1000
+    const recentStartIso = new Date(safeNowMs - windowDays * dayMs).toISOString()
+    const priorStartIso = new Date(safeNowMs - windowDays * 2 * dayMs).toISOString()
+
+    const reviewedActions = new Set([
+      "promoted",
+      "promoted_after_edit",
+      "rejected",
+      "needs_work",
+    ])
+
+    const labelRows: Array<{
+      candidate_id: string
+      action: string
+      created_at: string | null
+    }> = []
+
+    const pageSize = 1000
+    let from = 0
+    while (true) {
+      const to = from + pageSize - 1
+      const { data, error } = await this.client
+        .from("ingest_editor_labels")
+        .select("candidate_id, action, created_at")
+        .gte("created_at", priorStartIso)
+        .order("created_at", { ascending: false })
+        .range(from, to)
+
+      if (error) {
+        throw new Error(`Failed to list ingestion editor labels for trends: ${error.message}`)
+      }
+
+      const rows = (data ?? []) as Array<{
+        candidate_id: string
+        action: string
+        created_at: string | null
+      }>
+
+      if (rows.length === 0) {
+        break
+      }
+
+      labelRows.push(...rows)
+      if (rows.length < pageSize) {
+        break
+      }
+
+      from += pageSize
+    }
+
+    if (labelRows.length === 0) {
+      return normalizedKeys.map((sourceKey) => ({
+        sourceKey,
+        recentReviewedCount: 0,
+        recentRejectedCount: 0,
+        recentRejectionRate: null,
+        priorReviewedCount: 0,
+        priorRejectedCount: 0,
+        priorRejectionRate: null,
+      }))
+    }
+
+    const candidateIds = Array.from(new Set(labelRows.map((row) => row.candidate_id)))
+    const candidateSourceById = new Map<string, string>()
+    for (const idChunk of chunkArray(candidateIds, 200)) {
+      const { data, error } = await this.client
+        .from("ingest_candidates")
+        .select("id, source_key")
+        .in("id", idChunk)
+
+      if (error) {
+        throw new Error(`Failed to map editor labels to source keys: ${error.message}`)
+      }
+
+      for (const row of (data ?? []) as Array<{ id: string; source_key: string }>) {
+        candidateSourceById.set(row.id, row.source_key)
+      }
+    }
+
+    const aggregates = new Map<
+      string,
+      {
+        recentReviewedCount: number
+        recentRejectedCount: number
+        priorReviewedCount: number
+        priorRejectedCount: number
+      }
+    >()
+
+    const recentStartMs = Date.parse(recentStartIso)
+    for (const row of labelRows) {
+      if (!reviewedActions.has(row.action)) {
+        continue
+      }
+
+      const sourceKey = candidateSourceById.get(row.candidate_id)
+      if (!sourceKey) {
+        continue
+      }
+
+      if (normalizedKeys.length > 0 && !normalizedKeys.includes(sourceKey)) {
+        continue
+      }
+
+      const createdMs = Date.parse(row.created_at ?? "")
+      if (!Number.isFinite(createdMs)) {
+        continue
+      }
+
+      const aggregate = aggregates.get(sourceKey) ?? {
+        recentReviewedCount: 0,
+        recentRejectedCount: 0,
+        priorReviewedCount: 0,
+        priorRejectedCount: 0,
+      }
+
+      if (createdMs >= recentStartMs) {
+        aggregate.recentReviewedCount += 1
+        if (row.action === "rejected") {
+          aggregate.recentRejectedCount += 1
+        }
+      } else {
+        aggregate.priorReviewedCount += 1
+        if (row.action === "rejected") {
+          aggregate.priorRejectedCount += 1
+        }
+      }
+
+      aggregates.set(sourceKey, aggregate)
+    }
+
+    const sourceKeySet = new Set<string>([
+      ...normalizedKeys,
+      ...Array.from(aggregates.keys()),
+    ])
+
+    return Array.from(sourceKeySet)
+      .sort((left, right) => left.localeCompare(right))
+      .map((sourceKey) => {
+        const aggregate = aggregates.get(sourceKey) ?? {
+          recentReviewedCount: 0,
+          recentRejectedCount: 0,
+          priorReviewedCount: 0,
+          priorRejectedCount: 0,
+        }
+
+        return {
+          sourceKey,
+          recentReviewedCount: aggregate.recentReviewedCount,
+          recentRejectedCount: aggregate.recentRejectedCount,
+          recentRejectionRate:
+            aggregate.recentReviewedCount > 0
+              ? aggregate.recentRejectedCount / aggregate.recentReviewedCount
+              : null,
+          priorReviewedCount: aggregate.priorReviewedCount,
+          priorRejectedCount: aggregate.priorRejectedCount,
+          priorRejectionRate:
+            aggregate.priorReviewedCount > 0
+              ? aggregate.priorRejectedCount / aggregate.priorReviewedCount
+              : null,
+        }
+      })
   }
 
   async ensureSourceRegistryProposal(params: {

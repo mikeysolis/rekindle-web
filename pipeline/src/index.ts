@@ -2,6 +2,7 @@ import { runSource } from "./jobs/run-source.js"
 import { reconcilePromotions } from "./jobs/reconcile-promotions.js"
 import { sourceHealth } from "./jobs/source-health.js"
 import { sourceProbe } from "./jobs/source-probe.js"
+import { incidentAlerts } from "./jobs/incident-alerts.js"
 import { listSources } from "./sources/registry.js"
 import { loadLocalEnvFiles } from "./config/load-env.js"
 import type { SourceOnboardingApprovalAction } from "./durable-store/repository.js"
@@ -117,6 +118,7 @@ const help = () => {
   console.log("  list-sources")
   console.log("  run-source <source_key> [--respect-cadence] [--force]")
   console.log("  source-health [source_key]")
+  console.log("  incident-alerts [source_key]")
   console.log(
     "  source-probe <url_or_domain> [--source-key <key>] [--display-name <name>] [--owner-team <team>] [--approval-action pending_review|approved_for_trial|rejected] [--decision-reason <reason>] [--actor-user-id <uuid>] [--max-pages <number>] [--no-create-proposal]"
   )
@@ -157,6 +159,13 @@ async function main(): Promise<void> {
     case "source-health": {
       const sourceKey = args[0]
       const result = await sourceHealth(sourceKey)
+      console.log(JSON.stringify(result, null, 2))
+      return
+    }
+
+    case "incident-alerts": {
+      const sourceKey = args[0]
+      const result = await incidentAlerts(sourceKey)
       console.log(JSON.stringify(result, null, 2))
       return
     }
