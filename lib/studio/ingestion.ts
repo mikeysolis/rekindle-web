@@ -14,6 +14,11 @@ export const INGEST_CANDIDATE_STATUSES = [
 
 export type IngestCandidateStatus = (typeof INGEST_CANDIDATE_STATUSES)[number];
 
+export type IngestionConfidenceBand = "high" | "medium" | "low" | "unknown";
+export type IngestionConfidenceFilter = "all" | IngestionConfidenceBand;
+export type IngestionDuplicateRisk = "likely" | "low";
+export type IngestionDuplicateRiskFilter = "all" | IngestionDuplicateRisk;
+
 export type IngestionCandidate = {
   id: string;
   runId: string;
@@ -27,6 +32,12 @@ export type IngestionCandidate = {
   candidateKey: string;
   status: IngestCandidateStatus;
   metaJson: Record<string, unknown>;
+  qualityScore: number | null;
+  qualityThreshold: number | null;
+  qualityPassed: boolean | null;
+  qualityFlags: string[];
+  confidenceBand: IngestionConfidenceBand;
+  duplicateRisk: IngestionDuplicateRisk;
   createdAt: string | null;
   updatedAt: string | null;
 };
@@ -60,6 +71,7 @@ export type IngestionCandidateDetail = {
 
 export type IngestionDuplicateHint = {
   candidateId: string;
+  promotedDraftId: string | null;
   sourceUrl: string;
   title: string;
   status: IngestCandidateStatus;
@@ -72,6 +84,10 @@ export type IngestionListFilters = {
   status?: IngestCandidateStatus | "all";
   sourceKey?: string;
   query?: string;
+  confidence?: IngestionConfidenceFilter;
+  duplicateRisk?: IngestionDuplicateRiskFilter;
+  dateFrom?: string;
+  dateTo?: string;
   limit?: number;
 };
 
@@ -127,6 +143,12 @@ type RawDuplicateHintRow = {
   updated_at: string | null;
 };
 
+type RawDuplicateSyncRow = {
+  candidate_id: string;
+  target_id: string | null;
+  synced_at: string | null;
+};
+
 function parseCandidateStatus(value: string | null): IngestCandidateStatus {
   if (!value) {
     return "new";
@@ -154,7 +176,79 @@ function toMetaJson(value: unknown): Record<string, unknown> {
   return { ...(value as Record<string, unknown>) };
 }
 
+function readQualityMeta(metaJson: Record<string, unknown>): {
+  score: number | null;
+  threshold: number | null;
+  passed: boolean | null;
+  flags: string[];
+} {
+  const value = metaJson.quality;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {
+      score: null,
+      threshold: null,
+      passed: null,
+      flags: [],
+    };
+  }
+
+  const quality = value as Record<string, unknown>;
+  const score = typeof quality.score === "number" ? quality.score : null;
+  const threshold = typeof quality.threshold === "number" ? quality.threshold : null;
+  const passed = typeof quality.passed === "boolean" ? quality.passed : null;
+  const flags = Array.isArray(quality.flags)
+    ? quality.flags.map((entry) => String(entry))
+    : [];
+
+  return {
+    score,
+    threshold,
+    passed,
+    flags,
+  };
+}
+
+function classifyConfidenceBand(score: number | null): IngestionConfidenceBand {
+  if (score === null) {
+    return "unknown";
+  }
+
+  if (score >= 0.85) {
+    return "high";
+  }
+
+  if (score >= 0.6) {
+    return "medium";
+  }
+
+  return "low";
+}
+
+function classifyDuplicateRisk(
+  metaJson: Record<string, unknown>,
+  qualityFlags: string[],
+): IngestionDuplicateRisk {
+  const duplicateSignalInMeta = metaJson.duplicate_candidate_key_existing === true;
+  const duplicateSignalInFlags = qualityFlags.includes("duplicate_candidate_key_existing");
+  if (duplicateSignalInMeta || duplicateSignalInFlags) {
+    return "likely";
+  }
+
+  return "low";
+}
+
+function isDateFilterValue(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function toUtcDateRange(date: string, edge: "start" | "end"): string {
+  return edge === "start" ? `${date}T00:00:00.000Z` : `${date}T23:59:59.999Z`;
+}
+
 function mapCandidate(row: RawCandidateRow): IngestionCandidate {
+  const metaJson = toMetaJson(row.meta_json);
+  const quality = readQualityMeta(metaJson);
+
   return {
     id: row.id,
     runId: row.run_id,
@@ -167,7 +261,13 @@ function mapCandidate(row: RawCandidateRow): IngestionCandidate {
     rawExcerpt: row.raw_excerpt,
     candidateKey: row.candidate_key,
     status: parseCandidateStatus(row.status),
-    metaJson: toMetaJson(row.meta_json),
+    metaJson,
+    qualityScore: quality.score,
+    qualityThreshold: quality.threshold,
+    qualityPassed: quality.passed,
+    qualityFlags: quality.flags,
+    confidenceBand: classifyConfidenceBand(quality.score),
+    duplicateRisk: classifyDuplicateRisk(metaJson, quality.flags),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -274,6 +374,7 @@ function computeDuplicateHints(params: {
 
       return {
         candidateId: row.id,
+        promotedDraftId: null,
         sourceUrl: row.source_url,
         title: row.title,
         status: parseCandidateStatus(row.status),
@@ -310,7 +411,12 @@ export async function listIngestionCandidates(
   const status = filters.status ?? "all";
   const sourceKey = (filters.sourceKey ?? "").trim();
   const query = (filters.query ?? "").trim();
+  const confidence = filters.confidence ?? "all";
+  const duplicateRisk = filters.duplicateRisk ?? "all";
+  const dateFrom = (filters.dateFrom ?? "").trim();
+  const dateTo = (filters.dateTo ?? "").trim();
   const limit = filters.limit ?? 100;
+  const dbLimit = Math.min(Math.max(limit * 5, 200), 1000);
 
   let request = ingest
     .from("ingest_candidates")
@@ -318,7 +424,7 @@ export async function listIngestionCandidates(
       "id, run_id, page_id, source_key, source_url, title, description, reason_snippet, raw_excerpt, candidate_key, status, meta_json, created_at, updated_at",
     )
     .order("updated_at", { ascending: false })
-    .limit(limit);
+    .limit(dbLimit);
 
   if (status !== "all") {
     request = request.eq("status", status);
@@ -335,13 +441,34 @@ export async function listIngestionCandidates(
     );
   }
 
+  if (isDateFilterValue(dateFrom)) {
+    request = request.gte("updated_at", toUtcDateRange(dateFrom, "start"));
+  }
+
+  if (isDateFilterValue(dateTo)) {
+    request = request.lte("updated_at", toUtcDateRange(dateTo, "end"));
+  }
+
   const { data, error } = await request;
 
   if (error) {
     throw new Error(`Failed to list ingestion candidates: ${error.message}`);
   }
 
-  return (data ?? []).map((row) => mapCandidate(row as RawCandidateRow));
+  const mapped = (data ?? []).map((row) => mapCandidate(row as RawCandidateRow));
+  const filtered = mapped.filter((candidate) => {
+    if (confidence !== "all" && candidate.confidenceBand !== confidence) {
+      return false;
+    }
+
+    if (duplicateRisk !== "all" && candidate.duplicateRisk !== duplicateRisk) {
+      return false;
+    }
+
+    return true;
+  });
+
+  return filtered.slice(0, limit);
 }
 
 export async function getIngestionCandidateDetail(
@@ -407,12 +534,41 @@ export async function getIngestionCandidateDetail(
     candidate: mappedCandidate,
     rows: (duplicateRows ?? []) as RawDuplicateHintRow[],
   });
+  const duplicateCandidateIds = duplicateHints.map((hint) => hint.candidateId);
+  const draftIdByCandidateId = new Map<string, string>();
+
+  if (duplicateCandidateIds.length > 0) {
+    const { data: duplicateSyncRows, error: duplicateSyncError } = await ingest
+      .from("ingest_sync_log")
+      .select("candidate_id, target_id, synced_at")
+      .eq("target_system", "app_draft")
+      .eq("status", "success")
+      .in("candidate_id", duplicateCandidateIds)
+      .not("target_id", "is", null)
+      .order("synced_at", { ascending: false });
+
+    if (duplicateSyncError) {
+      throw new Error(
+        `Failed to load duplicate hint draft links: ${duplicateSyncError.message}`,
+      );
+    }
+
+    for (const row of (duplicateSyncRows ?? []) as RawDuplicateSyncRow[]) {
+      if (!row.target_id || draftIdByCandidateId.has(row.candidate_id)) {
+        continue;
+      }
+      draftIdByCandidateId.set(row.candidate_id, row.target_id);
+    }
+  }
 
   return {
     candidate: mappedCandidate,
     traits: (traitRows ?? []).map((row) => mapTrait(row as RawTraitRow)),
     syncLog: (syncRows ?? []).map((row) => mapSyncLog(row as RawSyncLogRow)),
-    duplicateHints,
+    duplicateHints: duplicateHints.map((hint) => ({
+      ...hint,
+      promotedDraftId: draftIdByCandidateId.get(hint.candidateId) ?? null,
+    })),
   };
 }
 

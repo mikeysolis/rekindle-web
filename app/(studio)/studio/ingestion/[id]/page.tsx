@@ -369,15 +369,26 @@ export default async function StudioIngestionDetailPage({
                     <p className="text-xs text-zinc-600">
                       similarity: {hint.similarityScore.toFixed(3)} • status: {hint.status}
                     </p>
+                    <p className="mt-1 text-xs text-zinc-600">{hint.sourceUrl}</p>
                     <p className="mt-1 text-xs text-zinc-600">
                       reasons: {hint.reasons.join(", ")}
                     </p>
-                    <Link
-                      href={`/studio/ingestion/${hint.candidateId}`}
-                      className="mt-2 inline-flex rounded border border-zinc-300 px-2 py-1 text-xs hover:border-zinc-600"
-                    >
-                      Open candidate
-                    </Link>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Link
+                        href={`/studio/ingestion/${hint.candidateId}`}
+                        className="inline-flex rounded border border-zinc-300 px-2 py-1 text-xs hover:border-zinc-600"
+                      >
+                        Open candidate
+                      </Link>
+                      {hint.promotedDraftId && (
+                        <Link
+                          href={`/studio/drafts/${hint.promotedDraftId}`}
+                          className="inline-flex rounded border border-zinc-300 px-2 py-1 text-xs hover:border-zinc-600"
+                        >
+                          Open draft {hint.promotedDraftId}
+                        </Link>
+                      )}
+                    </div>
                   </li>
                 ))}
               </ul>

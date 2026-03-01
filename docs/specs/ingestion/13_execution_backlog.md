@@ -215,9 +215,15 @@ Acceptance criteria:
 Dependencies: ING-011, ING-012
 
 Checklist:
-- [ ] Show raw excerpt, source URL, and quality flags in detail view.
-- [ ] Show duplicate hints with link to existing draft/candidate.
-- [ ] Add filters for source, status, confidence, duplicate risk, date.
+- [x] Show raw excerpt, source URL, and quality flags in detail view.
+- [x] Show duplicate hints with link to existing draft/candidate.
+- [x] Add filters for source, status, confidence, duplicate risk, date.
+
+Verification note:
+1. Candidate detail view includes raw excerpt, source URL, and machine quality metadata in `app/(studio)/studio/ingestion/[id]/page.tsx`.
+2. Duplicate hints now include both candidate links and promoted draft links when available (`lib/studio/ingestion.ts`, `app/(studio)/studio/ingestion/[id]/page.tsx`).
+3. Inbox filters now include confidence band, duplicate risk, and updated date range in addition to source/status/search (`app/(studio)/studio/ingestion/page.tsx`).
+4. Candidate list rows now surface confidence + quality score and duplicate risk to support evidence-first triage.
 
 Acceptance criteria:
 1. Editors can triage and decide without leaving Studio for most candidates.
@@ -493,5 +499,5 @@ After Epic 4:
 6. [x] ING-010
 7. [x] ING-011
 8. [x] ING-012
-9. [ ] ING-013
+9. [x] ING-013
 10. [ ] ING-014
