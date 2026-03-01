@@ -24,11 +24,24 @@ export type IngestionEditorLabelAction =
   | "promoted_after_edit"
   | "rejected"
   | "needs_work";
+export type IngestionExperimentStatus = "planned" | "running" | "completed" | "aborted";
+export type IngestionExperimentDecision = "adopt" | "revert" | "iterate";
 
 export const INGEST_REWRITE_SEVERITY_OPTIONS: readonly IngestionRewriteSeverity[] = [
   "light",
   "moderate",
   "heavy",
+] as const;
+export const INGEST_EXPERIMENT_STATUSES: readonly IngestionExperimentStatus[] = [
+  "planned",
+  "running",
+  "completed",
+  "aborted",
+] as const;
+export const INGEST_EXPERIMENT_DECISIONS: readonly IngestionExperimentDecision[] = [
+  "adopt",
+  "revert",
+  "iterate",
 ] as const;
 
 export const INGEST_REJECTION_REASON_CODES = [
@@ -274,6 +287,58 @@ export type IngestionLabelQualityAnalytics = {
   strategyRows: IngestionLabelStrategyKpiRow[];
 };
 
+export type IngestionExperimentMetric = {
+  metricName: string;
+  baselineValue: number;
+  treatmentValue: number;
+  deltaValue: number;
+};
+
+export type IngestionTuningChangeRecord = {
+  sourceKey: string;
+  configVersion: string;
+  changeJson: Record<string, unknown>;
+  approvedBy: string;
+  appliedAt: string | null;
+};
+
+export type IngestionExperimentRollout = {
+  id: string;
+  name: string;
+  hypothesis: string;
+  status: IngestionExperimentStatus;
+  decision: IngestionExperimentDecision | null;
+  resultSummary: string | null;
+  sourceKey: string | null;
+  strategy: string | null;
+  windowDays: IngestionPortfolioWindowDays | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  createdAt: string | null;
+  metrics: IngestionExperimentMetric[];
+  tuningChanges: IngestionTuningChangeRecord[];
+};
+
+export type CreateIngestionTuningExperimentInput = {
+  name: string;
+  hypothesis: string;
+  status: IngestionExperimentStatus;
+  decision: IngestionExperimentDecision;
+  resultSummary: string;
+  sourceKey: string;
+  strategy: string | null;
+  windowDays: IngestionPortfolioWindowDays | null;
+  configVersion: string;
+  changeJsonText: string;
+  metrics: Array<{
+    metricName: string;
+    baselineValue: number;
+    treatmentValue: number;
+  }>;
+  notes: string | null;
+  actorUserId: string;
+};
+
 export type IngestionSourceLifecycleState =
   | "proposed"
   | "approved_for_trial"
@@ -431,6 +496,34 @@ type IngestionLabelFact = {
   strategy: string;
 };
 
+type RawExperimentRow = {
+  id: string;
+  name: string;
+  hypothesis: string;
+  scope_json: unknown;
+  status: string;
+  started_at: string | null;
+  ended_at: string | null;
+  created_at: string | null;
+};
+
+type RawExperimentMetricRow = {
+  experiment_id: string;
+  metric_name: string;
+  baseline_value: number;
+  treatment_value: number;
+  delta_value: number;
+};
+
+type RawTuningChangeRow = {
+  experiment_id: string;
+  source_key: string;
+  config_version: string;
+  change_json: unknown;
+  approved_by: string;
+  applied_at: string | null;
+};
+
 function parseCandidateStatus(value: string | null): IngestCandidateStatus {
   if (!value) {
     return "new";
@@ -474,6 +567,8 @@ const EDITOR_LABEL_ACTION_SET = new Set<IngestionEditorLabelAction>([
   "rejected",
   "needs_work",
 ]);
+const EXPERIMENT_STATUS_SET = new Set<IngestionExperimentStatus>(INGEST_EXPERIMENT_STATUSES);
+const EXPERIMENT_DECISION_SET = new Set<IngestionExperimentDecision>(INGEST_EXPERIMENT_DECISIONS);
 const REWRITE_SEVERITY_SET = new Set<IngestionRewriteSeverity>(INGEST_REWRITE_SEVERITY_OPTIONS);
 const REJECTION_REASON_SET = new Set<IngestionRejectionReasonCode>(INGEST_REJECTION_REASON_CODES);
 const LABEL_TREND_WINDOWS: IngestionPortfolioWindowDays[] = [7, 30, 90];
@@ -515,6 +610,32 @@ function parseEditorLabelAction(value: string | null | undefined): IngestionEdit
   return null;
 }
 
+function parseExperimentStatus(value: string | null | undefined): IngestionExperimentStatus | null {
+  if (!value) {
+    return null;
+  }
+
+  if (EXPERIMENT_STATUS_SET.has(value as IngestionExperimentStatus)) {
+    return value as IngestionExperimentStatus;
+  }
+
+  return null;
+}
+
+function parseExperimentDecision(
+  value: string | null | undefined,
+): IngestionExperimentDecision | null {
+  if (!value) {
+    return null;
+  }
+
+  if (EXPERIMENT_DECISION_SET.has(value as IngestionExperimentDecision)) {
+    return value as IngestionExperimentDecision;
+  }
+
+  return null;
+}
+
 function parseRewriteSeverity(value: string | null | undefined): IngestionRewriteSeverity | null {
   if (!value) {
     return null;
@@ -522,6 +643,29 @@ function parseRewriteSeverity(value: string | null | undefined): IngestionRewrit
 
   if (REWRITE_SEVERITY_SET.has(value as IngestionRewriteSeverity)) {
     return value as IngestionRewriteSeverity;
+  }
+
+  return null;
+}
+
+function coerceWindowDays(value: unknown): IngestionPortfolioWindowDays | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    if (value <= 7) {
+      return 7;
+    }
+    if (value <= 30) {
+      return 30;
+    }
+    if (value <= 90) {
+      return 90;
+    }
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed === "7") return 7;
+    if (trimmed === "30") return 30;
+    if (trimmed === "90") return 90;
   }
 
   return null;
@@ -560,6 +704,54 @@ function normalizeRejectReasonCode(value: string): IngestionRejectionReasonCode 
     throw new Error("Reject reason code is required and must use the standard taxonomy.");
   }
   return trimmed as IngestionRejectionReasonCode;
+}
+
+function normalizeExperimentStatus(value: string): IngestionExperimentStatus {
+  const trimmed = value.trim();
+  const parsed = parseExperimentStatus(trimmed);
+  if (!parsed) {
+    throw new Error("Experiment status is invalid.");
+  }
+  return parsed;
+}
+
+function normalizeExperimentDecision(value: string): IngestionExperimentDecision {
+  const trimmed = value.trim();
+  const parsed = parseExperimentDecision(trimmed);
+  if (!parsed) {
+    throw new Error("Experiment decision must be one of: adopt, revert, iterate.");
+  }
+  return parsed;
+}
+
+function normalizeProbabilityMetric(value: number, label: string): number {
+  if (!Number.isFinite(value)) {
+    throw new Error(`${label} must be a finite number.`);
+  }
+  if (value < 0 || value > 1) {
+    throw new Error(`${label} must be between 0 and 1.`);
+  }
+  return value;
+}
+
+function parseChangeJson(value: string): Record<string, unknown> {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error("Change JSON is required.");
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    throw new Error("Change JSON must be valid JSON.");
+  }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Change JSON must be a JSON object.");
+  }
+
+  return parsed as Record<string, unknown>;
 }
 
 function toMetaJson(value: unknown): Record<string, unknown> {
@@ -1602,6 +1794,237 @@ export async function listIngestionLabelQualityAnalytics(
     sourceRows,
     strategyRows,
   };
+}
+
+export async function listIngestionExperimentRollouts(
+  limit = 50,
+): Promise<IngestionExperimentRollout[]> {
+  const ingest = createIngestionServiceRoleClient();
+  const safeLimit = Math.min(Math.max(limit, 1), 200);
+
+  const { data: experimentRows, error: experimentError } = await ingest
+    .from("ingest_experiments")
+    .select("id, name, hypothesis, scope_json, status, started_at, ended_at, created_at")
+    .order("created_at", { ascending: false })
+    .limit(safeLimit);
+
+  if (experimentError) {
+    throw new Error(`Failed to list ingestion experiments: ${experimentError.message}`);
+  }
+
+  const experiments = (experimentRows ?? []) as RawExperimentRow[];
+  if (experiments.length === 0) {
+    return [];
+  }
+
+  const experimentIds = experiments.map((row) => row.id);
+  const [{ data: metricRows, error: metricError }, { data: tuningRows, error: tuningError }] =
+    await Promise.all([
+      ingest
+        .from("ingest_experiment_metrics")
+        .select("experiment_id, metric_name, baseline_value, treatment_value, delta_value")
+        .in("experiment_id", experimentIds),
+      ingest
+        .from("ingest_tuning_changes")
+        .select("experiment_id, source_key, config_version, change_json, approved_by, applied_at")
+        .in("experiment_id", experimentIds),
+    ]);
+
+  if (metricError) {
+    throw new Error(`Failed to list ingestion experiment metrics: ${metricError.message}`);
+  }
+  if (tuningError) {
+    throw new Error(`Failed to list ingestion tuning changes: ${tuningError.message}`);
+  }
+
+  const metricsByExperimentId = new Map<string, IngestionExperimentMetric[]>();
+  for (const row of (metricRows ?? []) as RawExperimentMetricRow[]) {
+    const list = metricsByExperimentId.get(row.experiment_id) ?? [];
+    list.push({
+      metricName: row.metric_name,
+      baselineValue: row.baseline_value,
+      treatmentValue: row.treatment_value,
+      deltaValue: row.delta_value,
+    });
+    metricsByExperimentId.set(row.experiment_id, list);
+  }
+
+  const tuningByExperimentId = new Map<string, IngestionTuningChangeRecord[]>();
+  for (const row of (tuningRows ?? []) as RawTuningChangeRow[]) {
+    const list = tuningByExperimentId.get(row.experiment_id) ?? [];
+    list.push({
+      sourceKey: row.source_key,
+      configVersion: row.config_version,
+      changeJson: toMetaJson(row.change_json),
+      approvedBy: row.approved_by,
+      appliedAt: row.applied_at,
+    });
+    tuningByExperimentId.set(row.experiment_id, list);
+  }
+
+  return experiments.map((row) => {
+    const scope = toMetaJson(row.scope_json);
+    const decision = parseExperimentDecision(
+      typeof scope.tuning_decision === "string" ? scope.tuning_decision : null,
+    );
+    const resultSummary = normalizeOptionalText(
+      typeof scope.result_summary === "string" ? scope.result_summary : null,
+    );
+    const sourceKey = normalizeOptionalText(
+      typeof scope.source_key === "string" ? scope.source_key : null,
+    );
+    const strategy = normalizeOptionalText(
+      typeof scope.strategy === "string" ? scope.strategy : null,
+    );
+    const windowDays = coerceWindowDays(scope.selected_window_days);
+    const status =
+      parseExperimentStatus(row.status) ??
+      (() => {
+        throw new Error(`Invalid experiment status "${row.status}" in row ${row.id}.`);
+      })();
+
+    const metrics = (metricsByExperimentId.get(row.id) ?? []).sort((left, right) =>
+      left.metricName.localeCompare(right.metricName),
+    );
+    const tuningChanges = (tuningByExperimentId.get(row.id) ?? []).sort((left, right) => {
+      const leftAt = Date.parse(left.appliedAt ?? "");
+      const rightAt = Date.parse(right.appliedAt ?? "");
+      if (Number.isFinite(leftAt) && Number.isFinite(rightAt) && rightAt !== leftAt) {
+        return rightAt - leftAt;
+      }
+      return left.sourceKey.localeCompare(right.sourceKey);
+    });
+
+    return {
+      id: row.id,
+      name: row.name,
+      hypothesis: row.hypothesis,
+      status,
+      decision,
+      resultSummary,
+      sourceKey,
+      strategy,
+      windowDays,
+      startedAt: row.started_at,
+      endedAt: row.ended_at,
+      createdAt: row.created_at,
+      metrics,
+      tuningChanges,
+    } satisfies IngestionExperimentRollout;
+  });
+}
+
+export async function createIngestionTuningExperiment(
+  params: CreateIngestionTuningExperimentInput,
+): Promise<{ experimentId: string }> {
+  const ingest = createIngestionServiceRoleClient();
+  const name = normalizeRequiredReason(params.name, "Experiment name");
+  const hypothesis = normalizeRequiredReason(params.hypothesis, "Hypothesis");
+  const resultSummary = normalizeRequiredReason(params.resultSummary, "Result summary");
+  const sourceKey = normalizeRequiredReason(params.sourceKey, "Source key");
+  const configVersion = normalizeRequiredReason(params.configVersion, "Config version");
+  const status = normalizeExperimentStatus(params.status);
+  const decision = normalizeExperimentDecision(params.decision);
+  const strategy = normalizeOptionalText(params.strategy);
+  const notes = normalizeOptionalText(params.notes);
+  const changeJson = parseChangeJson(params.changeJsonText);
+
+  if (params.metrics.length === 0) {
+    throw new Error("At least one experiment metric is required.");
+  }
+
+  const nowIso = new Date().toISOString();
+  const startedAt = status === "planned" ? null : nowIso;
+  const endedAt = status === "completed" || status === "aborted" ? nowIso : null;
+
+  const scopeJson: Record<string, unknown> = {
+    source_key: sourceKey,
+    strategy,
+    selected_window_days: params.windowDays,
+    tuning_decision: decision,
+    result_summary: resultSummary,
+    notes,
+    actor_user_id: params.actorUserId,
+    created_from: "studio_ingestion_dashboard",
+  };
+
+  const { data: insertedExperiment, error: experimentError } = await ingest
+    .from("ingest_experiments")
+    .insert({
+      name,
+      hypothesis,
+      scope_json: scopeJson,
+      status,
+      started_at: startedAt,
+      ended_at: endedAt,
+    })
+    .select("id")
+    .single();
+
+  if (experimentError) {
+    throw new Error(`Failed to create ingestion experiment: ${experimentError.message}`);
+  }
+
+  const experimentId = String(insertedExperiment.id);
+  const metricRows = params.metrics.map((metric) => {
+    const metricName = normalizeRequiredReason(metric.metricName, "Metric name");
+    const baselineValue = normalizeProbabilityMetric(
+      metric.baselineValue,
+      `${metricName} baseline value`,
+    );
+    const treatmentValue = normalizeProbabilityMetric(
+      metric.treatmentValue,
+      `${metricName} treatment value`,
+    );
+    return {
+      experiment_id: experimentId,
+      metric_name: metricName,
+      baseline_value: baselineValue,
+      treatment_value: treatmentValue,
+      delta_value: treatmentValue - baselineValue,
+    };
+  });
+
+  try {
+    const { error: metricError } = await ingest.from("ingest_experiment_metrics").insert(metricRows);
+    if (metricError) {
+      throw new Error(`Failed to create ingestion experiment metrics: ${metricError.message}`);
+    }
+
+    const { error: tuningError } = await ingest.from("ingest_tuning_changes").insert({
+      experiment_id: experimentId,
+      source_key: sourceKey,
+      config_version: configVersion,
+      change_json: {
+        ...changeJson,
+        experiment_decision: decision,
+        experiment_status: status,
+        result_summary: resultSummary,
+      },
+      approved_by: params.actorUserId,
+      applied_at: nowIso,
+    });
+
+    if (tuningError) {
+      throw new Error(`Failed to record ingestion tuning change: ${tuningError.message}`);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const { error: rollbackError } = await ingest
+      .from("ingest_experiments")
+      .delete()
+      .eq("id", experimentId);
+
+    if (rollbackError) {
+      throw new Error(
+        `${message} (failed to rollback experiment ${experimentId}: ${rollbackError.message})`,
+      );
+    }
+
+    throw new Error(message);
+  }
+
+  return { experimentId };
 }
 
 export async function listIngestionSourceKeys(): Promise<string[]> {

@@ -121,3 +121,19 @@ These labels are mandatory inputs for tuning extraction quality.
    - optionally provide archival reference and archival summary
    - confirm product owner approval and compliance acknowledgment
 4. `retired` is terminal and should not offer reactivation controls in Studio.
+
+## 8) Tuning Experiment Logging (Admin)
+
+1. Open `Studio > Ingestion > Experiment & Tuning History`.
+2. Record each tuning rollout with:
+   - experiment name and hypothesis
+   - status and decision (`adopt|revert|iterate`)
+   - result summary
+   - source and config version
+   - change JSON payload
+   - baseline/treatment metrics
+3. Save to create linked records in:
+   - `ingest_experiments`
+   - `ingest_experiment_metrics`
+   - `ingest_tuning_changes`
+4. Use the history table to verify every rollout has hypothesis, result, and decision traceability.

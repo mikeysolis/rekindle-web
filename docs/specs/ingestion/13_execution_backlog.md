@@ -569,9 +569,28 @@ Acceptance criteria:
 Dependencies: ING-041
 
 Checklist:
-- [ ] Create experiment records for each tuning change.
-- [ ] Store baseline/treatment metrics in `ingest_experiment_metrics`.
-- [ ] Record deployed config changes in `ingest_tuning_changes`.
+- [x] Create experiment records for each tuning change.
+- [x] Store baseline/treatment metrics in `ingest_experiment_metrics`.
+- [x] Record deployed config changes in `ingest_tuning_changes`.
+
+Verification note:
+1. Added experiment/tuning service contracts and persistence functions:
+   - `createIngestionTuningExperiment(...)`
+   - `listIngestionExperimentRollouts(...)`
+   (`lib/studio/ingestion.ts`).
+2. Recording flow now creates linked rows across:
+   - `ingest_experiments` (name, hypothesis, status, scope_json with decision/result)
+   - `ingest_experiment_metrics` (baseline/treatment/delta per metric)
+   - `ingest_tuning_changes` (source/config/change_json/approved_by/applied_at)
+   with rollback-on-failure to avoid partial records.
+3. Added Studio ingestion “Experiment & Tuning History” section:
+   - admin form for recording tuning rollout experiments
+   - history table showing hypothesis, status/decision, linked tuning changes, and metrics
+   (`app/(studio)/studio/ingestion/page.tsx`).
+4. Verified on 2026-03-01:
+   - `npx eslint lib/studio/ingestion.ts 'app/(studio)/studio/ingestion/page.tsx'`
+   - `npx tsc --noEmit`
+   - `npx next build --webpack`.
 
 Acceptance criteria:
 1. Every tuning rollout has a linked hypothesis, result, and adopt/revert decision.

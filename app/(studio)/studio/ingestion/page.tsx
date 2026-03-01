@@ -6,11 +6,17 @@ import { requireStudioUser } from "@/lib/studio/auth";
 import {
   canReactivateIngestionSourceState,
   canRetireIngestionSourceState,
+  createIngestionTuningExperiment,
   INGEST_CANDIDATE_STATUSES,
+  INGEST_EXPERIMENT_DECISIONS,
+  INGEST_EXPERIMENT_STATUSES,
   type IngestionConfidenceFilter,
   type IngestionDuplicateRiskFilter,
+  type IngestionExperimentDecision,
+  type IngestionExperimentStatus,
   type IngestionPortfolioWindowDays,
   listIngestionCandidates,
+  listIngestionExperimentRollouts,
   listIngestionLabelQualityAnalytics,
   listIngestionSourcePortfolioMetrics,
   listIngestionSourceKeys,
@@ -32,6 +38,8 @@ type IngestionPageProps = {
     portfolioWindow?: string;
     sourceSaved?: string;
     sourceError?: string;
+    experimentSaved?: string;
+    experimentError?: string;
   }>;
 };
 
@@ -66,6 +74,18 @@ const PORTFOLIO_WINDOW_OPTIONS: Array<{
   { label: "Last 30 days", value: 30 },
   { label: "Last 90 days", value: 90 },
 ];
+
+const EXPERIMENT_STATUS_OPTIONS: Array<{ label: string; value: IngestionExperimentStatus }> =
+  INGEST_EXPERIMENT_STATUSES.map((value) => ({
+    value,
+    label: value.charAt(0).toUpperCase() + value.slice(1),
+  }));
+
+const EXPERIMENT_DECISION_OPTIONS: Array<{ label: string; value: IngestionExperimentDecision }> =
+  INGEST_EXPERIMENT_DECISIONS.map((value) => ({
+    value,
+    label: value.charAt(0).toUpperCase() + value.slice(1),
+  }));
 
 function parseConfidenceFilter(value: string): IngestionConfidenceFilter {
   if (
@@ -134,6 +154,28 @@ function isChecked(value: FormDataEntryValue | null): boolean {
   return value === "on" || value === "true";
 }
 
+function readRequiredText(formData: FormData, key: string): string {
+  const value = String(formData.get(key) ?? "").trim();
+  if (!value) {
+    throw new Error(`${key} is required.`);
+  }
+  return value;
+}
+
+function readOptionalText(formData: FormData, key: string): string | null {
+  const value = String(formData.get(key) ?? "").trim();
+  return value.length > 0 ? value : null;
+}
+
+function readRatio(formData: FormData, key: string): number {
+  const raw = String(formData.get(key) ?? "").trim();
+  const value = Number.parseFloat(raw);
+  if (!Number.isFinite(value) || value < 0 || value > 1) {
+    throw new Error(`${key} must be a number between 0 and 1.`);
+  }
+  return value;
+}
+
 export default async function StudioIngestionPage({ searchParams }: IngestionPageProps) {
   const studioUser = await requireStudioUser("viewer");
   const params = (await searchParams) ?? {};
@@ -153,8 +195,11 @@ export default async function StudioIngestionPage({ searchParams }: IngestionPag
   const portfolioWindow = parsePortfolioWindow((params.portfolioWindow ?? "").trim());
   const sourceSaved = (params.sourceSaved ?? "").trim();
   const sourceError = (params.sourceError ?? "").trim();
+  const experimentSaved = (params.experimentSaved ?? "").trim();
+  const experimentError = (params.experimentError ?? "").trim();
 
-  const [candidates, sourceKeys, sourcePortfolio, labelQualityAnalytics] = await Promise.all([
+  const [candidates, sourceKeys, sourcePortfolio, labelQualityAnalytics, experimentRollouts] =
+    await Promise.all([
     listIngestionCandidates({
       status,
       sourceKey: source || undefined,
@@ -168,6 +213,7 @@ export default async function StudioIngestionPage({ searchParams }: IngestionPag
     listIngestionSourceKeys(),
     listIngestionSourcePortfolioMetrics(portfolioWindow),
     listIngestionLabelQualityAnalytics(portfolioWindow),
+    listIngestionExperimentRollouts(40),
   ]);
   const selectedLabelTrend =
     labelQualityAnalytics.trendRows.find((row) => row.windowDays === portfolioWindow) ??
@@ -289,6 +335,80 @@ export default async function StudioIngestionPage({ searchParams }: IngestionPag
     queryParams.set("sourceSaved", `Retired source ${sourceKey}.`);
     const queryString = queryParams.toString();
     redirect(queryString.length > 0 ? `/studio/ingestion?${queryString}` : "/studio/ingestion");
+  }
+
+  async function recordTuningExperimentAction(formData: FormData) {
+    "use server";
+
+    const actingUser = await requireStudioUser("admin");
+
+    try {
+      const name = readRequiredText(formData, "experiment_name");
+      const hypothesis = readRequiredText(formData, "hypothesis");
+      const status = readRequiredText(formData, "status");
+      const decision = readRequiredText(formData, "decision");
+      const resultSummary = readRequiredText(formData, "result_summary");
+      const sourceKey = readRequiredText(formData, "source_key");
+      const configVersion = readRequiredText(formData, "config_version");
+      const changeJsonText = readRequiredText(formData, "change_json");
+      const strategy = readOptionalText(formData, "strategy");
+      const notes = readOptionalText(formData, "notes");
+      const scopeWindowRaw = readOptionalText(formData, "scope_window_days");
+      const windowDays = scopeWindowRaw ? parsePortfolioWindow(scopeWindowRaw) : null;
+
+      const metrics = [
+        {
+          metricName: "promotion_rate",
+          baselineValue: readRatio(formData, "promotion_rate_baseline"),
+          treatmentValue: readRatio(formData, "promotion_rate_treatment"),
+        },
+        {
+          metricName: "rejection_rate",
+          baselineValue: readRatio(formData, "rejection_rate_baseline"),
+          treatmentValue: readRatio(formData, "rejection_rate_treatment"),
+        },
+        {
+          metricName: "heavy_rewrite_share",
+          baselineValue: readRatio(formData, "heavy_rewrite_share_baseline"),
+          treatmentValue: readRatio(formData, "heavy_rewrite_share_treatment"),
+        },
+        {
+          metricName: "duplicate_confirmed_rate",
+          baselineValue: readRatio(formData, "duplicate_confirmed_rate_baseline"),
+          treatmentValue: readRatio(formData, "duplicate_confirmed_rate_treatment"),
+        },
+      ];
+
+      const result = await createIngestionTuningExperiment({
+        name,
+        hypothesis,
+        status: status as IngestionExperimentStatus,
+        decision: decision as IngestionExperimentDecision,
+        resultSummary,
+        sourceKey,
+        strategy,
+        windowDays,
+        configVersion,
+        changeJsonText,
+        metrics,
+        notes,
+        actorUserId: actingUser.userId,
+      });
+
+      const queryParams = new URLSearchParams(baseQueryEntries);
+      queryParams.set(
+        "experimentSaved",
+        `Recorded experiment ${result.experimentId} for source ${sourceKey}.`,
+      );
+      const queryString = queryParams.toString();
+      redirect(queryString.length > 0 ? `/studio/ingestion?${queryString}` : "/studio/ingestion");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const queryParams = new URLSearchParams(baseQueryEntries);
+      queryParams.set("experimentError", message);
+      const queryString = queryParams.toString();
+      redirect(queryString.length > 0 ? `/studio/ingestion?${queryString}` : "/studio/ingestion");
+    }
   }
 
   return (
@@ -722,6 +842,358 @@ export default async function StudioIngestionPage({ searchParams }: IngestionPag
                   </tbody>
                 </table>
               </div>
+            </div>
+          </section>
+
+          <section className="space-y-3 rounded border border-zinc-200 bg-zinc-50 p-3">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-semibold">Experiment & Tuning History</h4>
+                <p className="text-xs text-zinc-600">
+                  Record tuning rollouts with hypothesis, decision, baseline/treatment metrics, and
+                  deployed config linkage.
+                </p>
+              </div>
+              <p className="text-xs text-zinc-500">Rows: {experimentRollouts.length}</p>
+            </div>
+
+            {experimentSaved && (
+              <p className="rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+                {experimentSaved}
+              </p>
+            )}
+            {experimentError && (
+              <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {experimentError}
+              </p>
+            )}
+
+            {!canGovernSources && (
+              <p className="rounded border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-600">
+                You have read-only access. Admin role is required to record tuning experiments.
+              </p>
+            )}
+
+            {canGovernSources && (
+              <form
+                action={recordTuningExperimentAction}
+                className="grid gap-3 rounded border border-zinc-200 bg-white p-3 md:grid-cols-2"
+              >
+                <label className="text-sm">
+                  <span className="mb-1 block font-medium">Experiment name</span>
+                  <input
+                    name="experiment_name"
+                    className="w-full rounded border border-zinc-300 px-3 py-2"
+                    placeholder="Q1 RAK selector tuning"
+                    required
+                  />
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block font-medium">Status</span>
+                  <select
+                    name="status"
+                    className="w-full rounded border border-zinc-300 px-3 py-2"
+                    defaultValue="completed"
+                    required
+                  >
+                    {EXPERIMENT_STATUS_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-sm md:col-span-2">
+                  <span className="mb-1 block font-medium">Hypothesis</span>
+                  <textarea
+                    name="hypothesis"
+                    rows={2}
+                    className="w-full rounded border border-zinc-300 px-3 py-2"
+                    placeholder="What should improve and why."
+                    required
+                  />
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block font-medium">Decision</span>
+                  <select
+                    name="decision"
+                    className="w-full rounded border border-zinc-300 px-3 py-2"
+                    defaultValue="adopt"
+                    required
+                  >
+                    {EXPERIMENT_DECISION_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block font-medium">Window</span>
+                  <select
+                    name="scope_window_days"
+                    className="w-full rounded border border-zinc-300 px-3 py-2"
+                    defaultValue={String(portfolioWindow)}
+                  >
+                    <option value="">None</option>
+                    {PORTFOLIO_WINDOW_OPTIONS.map((option) => (
+                      <option key={option.value} value={String(option.value)}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-sm md:col-span-2">
+                  <span className="mb-1 block font-medium">Result summary</span>
+                  <textarea
+                    name="result_summary"
+                    rows={2}
+                    className="w-full rounded border border-zinc-300 px-3 py-2"
+                    placeholder="Outcome summary with key signal movement."
+                    required
+                  />
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block font-medium">Source</span>
+                  <select
+                    name="source_key"
+                    className="w-full rounded border border-zinc-300 px-3 py-2"
+                    defaultValue={source || ""}
+                    required
+                  >
+                    <option value="" disabled>
+                      Select source
+                    </option>
+                    {sourcePortfolio.rows.map((row) => (
+                      <option key={row.sourceKey} value={row.sourceKey}>
+                        {row.displayName} ({row.sourceKey})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block font-medium">Strategy (optional)</span>
+                  <input
+                    name="strategy"
+                    className="w-full rounded border border-zinc-300 px-3 py-2"
+                    placeholder="detail_page"
+                  />
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block font-medium">Config version</span>
+                  <input
+                    name="config_version"
+                    className="w-full rounded border border-zinc-300 px-3 py-2"
+                    placeholder="5"
+                    required
+                  />
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block font-medium">Notes (optional)</span>
+                  <input
+                    name="notes"
+                    className="w-full rounded border border-zinc-300 px-3 py-2"
+                    placeholder="Operator notes"
+                  />
+                </label>
+                <label className="text-sm md:col-span-2">
+                  <span className="mb-1 block font-medium">Change JSON</span>
+                  <textarea
+                    name="change_json"
+                    rows={4}
+                    className="w-full rounded border border-zinc-300 px-3 py-2 font-mono text-xs"
+                    defaultValue={`{"quality_threshold":0.62,"selector_profile_version":"rak_v2"}`}
+                    required
+                  />
+                </label>
+
+                <div className="md:col-span-2">
+                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
+                    Metrics (baseline {"->"} treatment)
+                  </p>
+                  <div className="grid gap-3 md:grid-cols-4">
+                    <label className="text-sm">
+                      <span className="mb-1 block font-medium">Promotion baseline</span>
+                      <input
+                        name="promotion_rate_baseline"
+                        type="number"
+                        step="0.0001"
+                        min="0"
+                        max="1"
+                        className="w-full rounded border border-zinc-300 px-3 py-2"
+                        required
+                      />
+                    </label>
+                    <label className="text-sm">
+                      <span className="mb-1 block font-medium">Promotion treatment</span>
+                      <input
+                        name="promotion_rate_treatment"
+                        type="number"
+                        step="0.0001"
+                        min="0"
+                        max="1"
+                        className="w-full rounded border border-zinc-300 px-3 py-2"
+                        required
+                      />
+                    </label>
+                    <label className="text-sm">
+                      <span className="mb-1 block font-medium">Rejection baseline</span>
+                      <input
+                        name="rejection_rate_baseline"
+                        type="number"
+                        step="0.0001"
+                        min="0"
+                        max="1"
+                        className="w-full rounded border border-zinc-300 px-3 py-2"
+                        required
+                      />
+                    </label>
+                    <label className="text-sm">
+                      <span className="mb-1 block font-medium">Rejection treatment</span>
+                      <input
+                        name="rejection_rate_treatment"
+                        type="number"
+                        step="0.0001"
+                        min="0"
+                        max="1"
+                        className="w-full rounded border border-zinc-300 px-3 py-2"
+                        required
+                      />
+                    </label>
+                    <label className="text-sm">
+                      <span className="mb-1 block font-medium">Heavy rewrite baseline</span>
+                      <input
+                        name="heavy_rewrite_share_baseline"
+                        type="number"
+                        step="0.0001"
+                        min="0"
+                        max="1"
+                        className="w-full rounded border border-zinc-300 px-3 py-2"
+                        required
+                      />
+                    </label>
+                    <label className="text-sm">
+                      <span className="mb-1 block font-medium">Heavy rewrite treatment</span>
+                      <input
+                        name="heavy_rewrite_share_treatment"
+                        type="number"
+                        step="0.0001"
+                        min="0"
+                        max="1"
+                        className="w-full rounded border border-zinc-300 px-3 py-2"
+                        required
+                      />
+                    </label>
+                    <label className="text-sm">
+                      <span className="mb-1 block font-medium">Duplicate baseline</span>
+                      <input
+                        name="duplicate_confirmed_rate_baseline"
+                        type="number"
+                        step="0.0001"
+                        min="0"
+                        max="1"
+                        className="w-full rounded border border-zinc-300 px-3 py-2"
+                        required
+                      />
+                    </label>
+                    <label className="text-sm">
+                      <span className="mb-1 block font-medium">Duplicate treatment</span>
+                      <input
+                        name="duplicate_confirmed_rate_treatment"
+                        type="number"
+                        step="0.0001"
+                        min="0"
+                        max="1"
+                        className="w-full rounded border border-zinc-300 px-3 py-2"
+                        required
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                <div className="md:col-span-2">
+                  <button
+                    type="submit"
+                    className="rounded border border-zinc-300 px-4 py-2 text-sm hover:border-zinc-600"
+                  >
+                    Record Tuning Experiment
+                  </button>
+                </div>
+              </form>
+            )}
+
+            <div className="overflow-x-auto rounded border border-zinc-200 bg-white">
+              <table className="min-w-full border-collapse text-sm">
+                <thead className="bg-zinc-100 text-left">
+                  <tr>
+                    <th className="border-b border-zinc-200 px-3 py-2">Experiment</th>
+                    <th className="border-b border-zinc-200 px-3 py-2">Status / Decision</th>
+                    <th className="border-b border-zinc-200 px-3 py-2">Tuning Change</th>
+                    <th className="border-b border-zinc-200 px-3 py-2">Metrics</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {experimentRollouts.length === 0 && (
+                    <tr>
+                      <td className="px-3 py-4 text-center text-zinc-500" colSpan={4}>
+                        No experiment rows recorded yet.
+                      </td>
+                    </tr>
+                  )}
+                  {experimentRollouts.map((row) => (
+                    <tr key={row.id}>
+                      <td className="border-b border-zinc-100 px-3 py-2 align-top">
+                        <p className="font-medium">{row.name}</p>
+                        <p className="mt-1 text-xs text-zinc-600">{row.hypothesis}</p>
+                        <p className="mt-1 text-xs text-zinc-500">
+                          {row.createdAt ? formatDateTime(row.createdAt) : "-"}
+                        </p>
+                      </td>
+                      <td className="border-b border-zinc-100 px-3 py-2 align-top">
+                        <p>{row.status}</p>
+                        <p className="text-xs text-zinc-600">decision: {row.decision ?? "-"}</p>
+                        <p className="text-xs text-zinc-600">window: {row.windowDays ?? "-"}</p>
+                        {row.resultSummary && (
+                          <p className="mt-1 text-xs text-zinc-600">{row.resultSummary}</p>
+                        )}
+                      </td>
+                      <td className="border-b border-zinc-100 px-3 py-2 align-top">
+                        {row.tuningChanges.length === 0 ? (
+                          <p className="text-xs text-zinc-500">No tuning changes linked.</p>
+                        ) : (
+                          row.tuningChanges.slice(0, 2).map((change, index) => (
+                            <div key={`${change.sourceKey}-${change.configVersion}-${index}`} className="mb-2 text-xs">
+                              <p className="font-medium">
+                                {change.sourceKey} • v{change.configVersion}
+                              </p>
+                              <p className="text-zinc-600">
+                                approved by {change.approvedBy}
+                              </p>
+                              <p className="text-zinc-500">
+                                {change.appliedAt ? formatDateTime(change.appliedAt) : "-"}
+                              </p>
+                            </div>
+                          ))
+                        )}
+                      </td>
+                      <td className="border-b border-zinc-100 px-3 py-2 align-top">
+                        {row.metrics.length === 0 ? (
+                          <p className="text-xs text-zinc-500">No metric rows.</p>
+                        ) : (
+                          row.metrics.map((metric) => (
+                            <p key={metric.metricName} className="text-xs text-zinc-700">
+                              {metric.metricName}: {formatPercent(metric.baselineValue)} {"->"}{" "}
+                              {formatPercent(metric.treatmentValue)} (delta{" "}
+                              {metric.deltaValue >= 0 ? "+" : ""}
+                              {(metric.deltaValue * 100).toFixed(2)}%)
+                            </p>
+                          ))
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </section>
 

@@ -35,8 +35,10 @@ Core Studio ingestion service functions:
 4. `markIngestionCandidateNeedsWork({candidateId, actorUserId, note, rewriteSeverity, duplicateConfirmed})`
 5. `promoteIngestionCandidateToDraft({candidateId, actorUserId, rewriteSeverity, duplicateConfirmed, promotedAfterEdit})`
 6. `listIngestionLabelQualityAnalytics(windowDays)`
-7. `reactivateIngestionSource({sourceKey, actorUserId, reason, productOwnerApproved, complianceAcknowledged})`
-8. `retireIngestionSource({sourceKey, actorUserId, reason, productOwnerApproved, complianceAcknowledged, archivalReference, archivalSummary})`
+7. `createIngestionTuningExperiment(input)`
+8. `listIngestionExperimentRollouts(limit)`
+9. `reactivateIngestionSource({sourceKey, actorUserId, reason, productOwnerApproved, complianceAcknowledged})`
+10. `retireIngestionSource({sourceKey, actorUserId, reason, productOwnerApproved, complianceAcknowledged, archivalReference, archivalSummary})`
 
 ## 4) Suggested API Contract Shapes
 
