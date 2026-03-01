@@ -213,6 +213,67 @@ export type IngestionSourcePortfolioMetrics = {
   rows: IngestionSourcePortfolioRow[];
 };
 
+export type IngestionLabelTrendRejectReason = {
+  code: string;
+  count: number;
+  share: number | null;
+};
+
+export type IngestionLabelTrendRow = {
+  windowDays: IngestionPortfolioWindowDays;
+  windowStartAt: string;
+  reviewedLabels: number;
+  promotedLabels: number;
+  promotedAfterEditLabels: number;
+  rejectedLabels: number;
+  needsWorkLabels: number;
+  promotionRate: number | null;
+  rejectionRate: number | null;
+  duplicateConfirmedRate: number | null;
+  heavyRewriteShare: number | null;
+  topRejectReasons: IngestionLabelTrendRejectReason[];
+};
+
+export type IngestionLabelSourceKpiRow = {
+  sourceKey: string;
+  displayName: string;
+  state: string;
+  approvedForProd: boolean;
+  reviewedLabels: number;
+  promotedLabels: number;
+  rejectedLabels: number;
+  needsWorkLabels: number;
+  promotionRate: number | null;
+  rejectionRate: number | null;
+  duplicateConfirmedRate: number | null;
+  heavyRewriteShare: number | null;
+  topRejectReasonCode: string | null;
+  strategyCount: number;
+};
+
+export type IngestionLabelStrategyKpiRow = {
+  strategy: string;
+  reviewedLabels: number;
+  promotedLabels: number;
+  rejectedLabels: number;
+  needsWorkLabels: number;
+  promotionRate: number | null;
+  rejectionRate: number | null;
+  duplicateConfirmedRate: number | null;
+  heavyRewriteShare: number | null;
+  topRejectReasonCode: string | null;
+  sourceCount: number;
+};
+
+export type IngestionLabelQualityAnalytics = {
+  generatedAt: string;
+  selectedWindowDays: IngestionPortfolioWindowDays;
+  selectedWindowStartAt: string;
+  trendRows: IngestionLabelTrendRow[];
+  sourceRows: IngestionLabelSourceKpiRow[];
+  strategyRows: IngestionLabelStrategyKpiRow[];
+};
+
 export type IngestionSourceLifecycleState =
   | "proposed"
   | "approved_for_trial"
@@ -334,6 +395,42 @@ type RawSourceLifecycleRow = {
   metadata_json: unknown;
 };
 
+type RawEditorLabelRow = {
+  candidate_id: string;
+  action: string;
+  reject_reason_code: string | null;
+  rewrite_severity: string | null;
+  duplicate_confirmed: boolean | null;
+  actor_user_id: string;
+  created_at: string | null;
+};
+
+type RawLabelCandidateProjectionRow = {
+  id: string;
+  source_key: string;
+  meta_json: unknown;
+};
+
+type RawSourceRegistryQualityRow = {
+  source_key: string;
+  display_name: string;
+  state: string;
+  approved_for_prod: boolean;
+};
+
+type IngestionLabelFact = {
+  createdAt: string;
+  action: IngestionEditorLabelAction;
+  rejectReasonCode: string | null;
+  rewriteSeverity: IngestionRewriteSeverity | null;
+  duplicateConfirmed: boolean | null;
+  sourceKey: string;
+  sourceDisplayName: string;
+  sourceState: string;
+  sourceApprovedForProd: boolean;
+  strategy: string;
+};
+
 function parseCandidateStatus(value: string | null): IngestCandidateStatus {
   if (!value) {
     return "new";
@@ -371,8 +468,15 @@ const RETIRABLE_SOURCE_STATE_SET = new Set<IngestionSourceLifecycleState>([
   "degraded",
   "paused",
 ]);
+const EDITOR_LABEL_ACTION_SET = new Set<IngestionEditorLabelAction>([
+  "promoted",
+  "promoted_after_edit",
+  "rejected",
+  "needs_work",
+]);
 const REWRITE_SEVERITY_SET = new Set<IngestionRewriteSeverity>(INGEST_REWRITE_SEVERITY_OPTIONS);
 const REJECTION_REASON_SET = new Set<IngestionRejectionReasonCode>(INGEST_REJECTION_REASON_CODES);
+const LABEL_TREND_WINDOWS: IngestionPortfolioWindowDays[] = [7, 30, 90];
 const LIFECYCLE_WORKFLOW_VERSION = "ing033_v1";
 
 function parseSourceLifecycleState(
@@ -397,6 +501,46 @@ export function canReactivateIngestionSourceState(state: string): boolean {
 export function canRetireIngestionSourceState(state: string): boolean {
   const parsed = parseSourceLifecycleState(state);
   return parsed ? RETIRABLE_SOURCE_STATE_SET.has(parsed) : false;
+}
+
+function parseEditorLabelAction(value: string | null | undefined): IngestionEditorLabelAction | null {
+  if (!value) {
+    return null;
+  }
+
+  if (EDITOR_LABEL_ACTION_SET.has(value as IngestionEditorLabelAction)) {
+    return value as IngestionEditorLabelAction;
+  }
+
+  return null;
+}
+
+function parseRewriteSeverity(value: string | null | undefined): IngestionRewriteSeverity | null {
+  if (!value) {
+    return null;
+  }
+
+  if (REWRITE_SEVERITY_SET.has(value as IngestionRewriteSeverity)) {
+    return value as IngestionRewriteSeverity;
+  }
+
+  return null;
+}
+
+function readCandidateExtractionStrategy(metaJson: unknown): string {
+  const meta = toMetaJson(metaJson);
+  const strategy = meta.extraction_strategy;
+  if (typeof strategy === "string" && strategy.trim().length > 0) {
+    return strategy.trim();
+  }
+  return "unknown";
+}
+
+function safeRatio(numerator: number, denominator: number): number | null {
+  if (denominator <= 0) {
+    return null;
+  }
+  return numerator / denominator;
 }
 
 function normalizeRewriteSeverity(
@@ -569,6 +713,137 @@ function chunkArray<T>(items: T[], chunkSize: number): T[][] {
     output.push(items.slice(index, index + chunkSize));
   }
   return output;
+}
+
+type IngestionLabelAggregate = {
+  reviewedLabels: number;
+  promotedLabels: number;
+  promotedAfterEditLabels: number;
+  rejectedLabels: number;
+  needsWorkLabels: number;
+  duplicateKnownLabels: number;
+  duplicateConfirmedLabels: number;
+  rewriteKnownLabels: number;
+  heavyRewriteLabels: number;
+  rejectReasonCounts: Map<string, number>;
+};
+
+function createEmptyLabelAggregate(): IngestionLabelAggregate {
+  return {
+    reviewedLabels: 0,
+    promotedLabels: 0,
+    promotedAfterEditLabels: 0,
+    rejectedLabels: 0,
+    needsWorkLabels: 0,
+    duplicateKnownLabels: 0,
+    duplicateConfirmedLabels: 0,
+    rewriteKnownLabels: 0,
+    heavyRewriteLabels: 0,
+    rejectReasonCounts: new Map<string, number>(),
+  };
+}
+
+function aggregateIngestionLabelFacts(rows: IngestionLabelFact[]): IngestionLabelAggregate {
+  const aggregate = createEmptyLabelAggregate();
+
+  for (const row of rows) {
+    aggregate.reviewedLabels += 1;
+
+    if (row.action === "promoted") {
+      aggregate.promotedLabels += 1;
+    } else if (row.action === "promoted_after_edit") {
+      aggregate.promotedAfterEditLabels += 1;
+    } else if (row.action === "rejected") {
+      aggregate.rejectedLabels += 1;
+    } else if (row.action === "needs_work") {
+      aggregate.needsWorkLabels += 1;
+    }
+
+    if (row.duplicateConfirmed !== null) {
+      aggregate.duplicateKnownLabels += 1;
+      if (row.duplicateConfirmed) {
+        aggregate.duplicateConfirmedLabels += 1;
+      }
+    }
+
+    if (row.rewriteSeverity !== null) {
+      aggregate.rewriteKnownLabels += 1;
+      if (row.rewriteSeverity === "heavy") {
+        aggregate.heavyRewriteLabels += 1;
+      }
+    }
+
+    if (row.action === "rejected" && row.rejectReasonCode) {
+      aggregate.rejectReasonCounts.set(
+        row.rejectReasonCode,
+        (aggregate.rejectReasonCounts.get(row.rejectReasonCode) ?? 0) + 1,
+      );
+    }
+  }
+
+  return aggregate;
+}
+
+function toTopRejectReasons(
+  counts: Map<string, number>,
+  rejectedLabels: number,
+): IngestionLabelTrendRejectReason[] {
+  return Array.from(counts.entries())
+    .sort((left, right) => {
+      if (right[1] !== left[1]) {
+        return right[1] - left[1];
+      }
+      return left[0].localeCompare(right[0]);
+    })
+    .slice(0, 3)
+    .map(([code, count]) => ({
+      code,
+      count,
+      share: safeRatio(count, rejectedLabels),
+    }));
+}
+
+function topRejectReasonCode(counts: Map<string, number>): string | null {
+  const top = Array.from(counts.entries()).sort((left, right) => {
+    if (right[1] !== left[1]) {
+      return right[1] - left[1];
+    }
+    return left[0].localeCompare(right[0]);
+  })[0];
+  return top ? top[0] : null;
+}
+
+function computeWindowStartIso(windowDays: IngestionPortfolioWindowDays): string {
+  return new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+}
+
+function buildLabelTrendRow(params: {
+  windowDays: IngestionPortfolioWindowDays;
+  rows: IngestionLabelFact[];
+}): IngestionLabelTrendRow {
+  const windowStartAt = computeWindowStartIso(params.windowDays);
+  const windowStartMs = Date.parse(windowStartAt);
+  const filteredRows = params.rows.filter((row) => Date.parse(row.createdAt) >= windowStartMs);
+  const aggregate = aggregateIngestionLabelFacts(filteredRows);
+  const promotedTotal = aggregate.promotedLabels + aggregate.promotedAfterEditLabels;
+
+  return {
+    windowDays: params.windowDays,
+    windowStartAt,
+    reviewedLabels: aggregate.reviewedLabels,
+    promotedLabels: aggregate.promotedLabels,
+    promotedAfterEditLabels: aggregate.promotedAfterEditLabels,
+    rejectedLabels: aggregate.rejectedLabels,
+    needsWorkLabels: aggregate.needsWorkLabels,
+    promotionRate: safeRatio(promotedTotal, aggregate.reviewedLabels),
+    rejectionRate: safeRatio(aggregate.rejectedLabels, aggregate.reviewedLabels),
+    duplicateConfirmedRate: safeRatio(
+      aggregate.duplicateConfirmedLabels,
+      aggregate.duplicateKnownLabels,
+    ),
+    heavyRewriteShare: safeRatio(aggregate.heavyRewriteLabels, aggregate.rewriteKnownLabels),
+    topRejectReasons: toTopRejectReasons(aggregate.rejectReasonCounts, aggregate.rejectedLabels),
+  };
 }
 
 function readQualityMeta(metaJson: Record<string, unknown>): {
@@ -1111,6 +1386,221 @@ export async function listIngestionSourcePortfolioMetrics(
       totalDiversityUnits,
     },
     rows,
+  };
+}
+
+export async function listIngestionLabelQualityAnalytics(
+  requestedWindowDays = 30,
+): Promise<IngestionLabelQualityAnalytics> {
+  const ingest = createIngestionServiceRoleClient();
+  const generatedAt = new Date().toISOString();
+  const selectedWindowDays = coercePortfolioWindowDays(requestedWindowDays);
+  const maxWindowStartAt = computeWindowStartIso(90);
+  const maxWindowStartMs = Date.parse(maxWindowStartAt);
+
+  const rawLabelRows = await readPagedRows<RawEditorLabelRow>({
+    label: "editor label rows",
+    fetchPage: (from, to) =>
+      ingest
+        .from("ingest_editor_labels")
+        .select(
+          "candidate_id, action, reject_reason_code, rewrite_severity, duplicate_confirmed, actor_user_id, created_at",
+        )
+        .gte("created_at", maxWindowStartAt)
+        .order("created_at", { ascending: false })
+        .range(from, to) as unknown as Promise<{
+        data: RawEditorLabelRow[] | null;
+        error: { message: string } | null;
+      }>,
+  });
+
+  const labelRows: RawEditorLabelRow[] = rawLabelRows.filter((row) => {
+    if (!row.created_at) {
+      return false;
+    }
+    const createdMs = Date.parse(row.created_at);
+    if (!Number.isFinite(createdMs) || createdMs < maxWindowStartMs) {
+      return false;
+    }
+    return parseEditorLabelAction(row.action) !== null;
+  });
+
+  const candidateById = new Map<string, RawLabelCandidateProjectionRow>();
+  const candidateIds = Array.from(new Set(labelRows.map((row) => row.candidate_id)));
+
+  for (const idChunk of chunkArray(candidateIds, 200)) {
+    if (idChunk.length === 0) {
+      continue;
+    }
+
+    const { data, error } = await ingest
+      .from("ingest_candidates")
+      .select("id, source_key, meta_json")
+      .in("id", idChunk);
+
+    if (error) {
+      throw new Error(`Failed to load label candidate projections: ${error.message}`);
+    }
+
+    for (const row of (data ?? []) as RawLabelCandidateProjectionRow[]) {
+      candidateById.set(row.id, row);
+    }
+  }
+
+  const sourceRegistryByKey = new Map<string, RawSourceRegistryQualityRow>();
+  const sourceKeys = Array.from(
+    new Set(Array.from(candidateById.values()).map((row) => row.source_key)),
+  );
+
+  for (const keyChunk of chunkArray(sourceKeys, 200)) {
+    if (keyChunk.length === 0) {
+      continue;
+    }
+
+    const { data, error } = await ingest
+      .from("ingest_source_registry")
+      .select("source_key, display_name, state, approved_for_prod")
+      .in("source_key", keyChunk);
+
+    if (error) {
+      throw new Error(`Failed to load source registry quality projections: ${error.message}`);
+    }
+
+    for (const row of (data ?? []) as RawSourceRegistryQualityRow[]) {
+      sourceRegistryByKey.set(row.source_key, row);
+    }
+  }
+
+  const labelFacts: IngestionLabelFact[] = [];
+  for (const row of labelRows) {
+    const action = parseEditorLabelAction(row.action);
+    if (!action || !row.created_at) {
+      continue;
+    }
+
+    const candidate = candidateById.get(row.candidate_id);
+    const sourceKey = candidate?.source_key ?? "unknown_source";
+    const sourceRegistry = sourceRegistryByKey.get(sourceKey);
+    const rejectReasonCode = normalizeOptionalText(row.reject_reason_code);
+    const rewriteSeverity = parseRewriteSeverity(row.rewrite_severity);
+    const strategy = candidate ? readCandidateExtractionStrategy(candidate.meta_json) : "unknown";
+
+    labelFacts.push({
+      createdAt: row.created_at,
+      action,
+      rejectReasonCode,
+      rewriteSeverity,
+      duplicateConfirmed:
+        typeof row.duplicate_confirmed === "boolean" ? row.duplicate_confirmed : null,
+      sourceKey,
+      sourceDisplayName: sourceRegistry?.display_name ?? sourceKey,
+      sourceState: sourceRegistry?.state ?? "unregistered",
+      sourceApprovedForProd: sourceRegistry?.approved_for_prod ?? false,
+      strategy,
+    });
+  }
+
+  const trendRows = LABEL_TREND_WINDOWS.map((windowDays) =>
+    buildLabelTrendRow({
+      windowDays,
+      rows: labelFacts,
+    }),
+  );
+  const selectedWindowStartAt = computeWindowStartIso(selectedWindowDays);
+  const selectedWindowStartMs = Date.parse(selectedWindowStartAt);
+  const selectedRows = labelFacts.filter((row) => Date.parse(row.createdAt) >= selectedWindowStartMs);
+
+  const sourceRows = Array.from(
+    selectedRows.reduce((map, row) => {
+      const existing = map.get(row.sourceKey) ?? [];
+      existing.push(row);
+      map.set(row.sourceKey, existing);
+      return map;
+    }, new Map<string, IngestionLabelFact[]>()),
+  )
+    .map(([sourceKey, rows]) => {
+      const aggregate = aggregateIngestionLabelFacts(rows);
+      const promotedTotal = aggregate.promotedLabels + aggregate.promotedAfterEditLabels;
+      const sourceMeta = rows[0];
+      return {
+        sourceKey,
+        displayName: sourceMeta.sourceDisplayName,
+        state: sourceMeta.sourceState,
+        approvedForProd: sourceMeta.sourceApprovedForProd,
+        reviewedLabels: aggregate.reviewedLabels,
+        promotedLabels: promotedTotal,
+        rejectedLabels: aggregate.rejectedLabels,
+        needsWorkLabels: aggregate.needsWorkLabels,
+        promotionRate: safeRatio(promotedTotal, aggregate.reviewedLabels),
+        rejectionRate: safeRatio(aggregate.rejectedLabels, aggregate.reviewedLabels),
+        duplicateConfirmedRate: safeRatio(
+          aggregate.duplicateConfirmedLabels,
+          aggregate.duplicateKnownLabels,
+        ),
+        heavyRewriteShare: safeRatio(aggregate.heavyRewriteLabels, aggregate.rewriteKnownLabels),
+        topRejectReasonCode: topRejectReasonCode(aggregate.rejectReasonCounts),
+        strategyCount: new Set(rows.map((entry) => entry.strategy)).size,
+      } satisfies IngestionLabelSourceKpiRow;
+    })
+    .sort((left, right) => {
+      if (right.reviewedLabels !== left.reviewedLabels) {
+        return right.reviewedLabels - left.reviewedLabels;
+      }
+      const rightPromotion = right.promotionRate ?? -1;
+      const leftPromotion = left.promotionRate ?? -1;
+      if (rightPromotion !== leftPromotion) {
+        return rightPromotion - leftPromotion;
+      }
+      return left.sourceKey.localeCompare(right.sourceKey);
+    });
+
+  const strategyRows = Array.from(
+    selectedRows.reduce((map, row) => {
+      const existing = map.get(row.strategy) ?? [];
+      existing.push(row);
+      map.set(row.strategy, existing);
+      return map;
+    }, new Map<string, IngestionLabelFact[]>()),
+  )
+    .map(([strategy, rows]) => {
+      const aggregate = aggregateIngestionLabelFacts(rows);
+      const promotedTotal = aggregate.promotedLabels + aggregate.promotedAfterEditLabels;
+      return {
+        strategy,
+        reviewedLabels: aggregate.reviewedLabels,
+        promotedLabels: promotedTotal,
+        rejectedLabels: aggregate.rejectedLabels,
+        needsWorkLabels: aggregate.needsWorkLabels,
+        promotionRate: safeRatio(promotedTotal, aggregate.reviewedLabels),
+        rejectionRate: safeRatio(aggregate.rejectedLabels, aggregate.reviewedLabels),
+        duplicateConfirmedRate: safeRatio(
+          aggregate.duplicateConfirmedLabels,
+          aggregate.duplicateKnownLabels,
+        ),
+        heavyRewriteShare: safeRatio(aggregate.heavyRewriteLabels, aggregate.rewriteKnownLabels),
+        topRejectReasonCode: topRejectReasonCode(aggregate.rejectReasonCounts),
+        sourceCount: new Set(rows.map((entry) => entry.sourceKey)).size,
+      } satisfies IngestionLabelStrategyKpiRow;
+    })
+    .sort((left, right) => {
+      if (right.reviewedLabels !== left.reviewedLabels) {
+        return right.reviewedLabels - left.reviewedLabels;
+      }
+      const rightPromotion = right.promotionRate ?? -1;
+      const leftPromotion = left.promotionRate ?? -1;
+      if (rightPromotion !== leftPromotion) {
+        return rightPromotion - leftPromotion;
+      }
+      return left.strategy.localeCompare(right.strategy);
+    });
+
+  return {
+    generatedAt,
+    selectedWindowDays,
+    selectedWindowStartAt,
+    trendRows,
+    sourceRows,
+    strategyRows,
   };
 }
 

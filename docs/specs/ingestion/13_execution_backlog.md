@@ -539,9 +539,28 @@ Acceptance criteria:
 Dependencies: ING-040
 
 Checklist:
-- [ ] Join labels with extraction metadata and source registry.
-- [ ] Compute per-source/per-strategy KPI slices.
-- [ ] Publish 7/30/90 day trend outputs.
+- [x] Join labels with extraction metadata and source registry.
+- [x] Compute per-source/per-strategy KPI slices.
+- [x] Publish 7/30/90 day trend outputs.
+
+Verification note:
+1. Added label analytics service pipeline:
+   - `listIngestionLabelQualityAnalytics(windowDays)`
+   - joins `ingest_editor_labels` with candidate extraction metadata (`meta_json.extraction_strategy`)
+     and source registry governance metadata (`display_name`, `state`, `approved_for_prod`)
+   - computes windowed trend metrics for 7/30/90 days
+   - computes per-source and per-strategy KPI slices for selected window
+   (`lib/studio/ingestion.ts`).
+2. Added editorial quality dashboard section in Studio ingestion page:
+   - KPI cards for selected window
+   - 7/30/90 trend table
+   - per-source KPI table
+   - per-strategy KPI table
+   (`app/(studio)/studio/ingestion/page.tsx`).
+3. Verified on 2026-03-01:
+   - `npx eslint lib/studio/ingestion.ts 'app/(studio)/studio/ingestion/page.tsx'`
+   - `npx tsc --noEmit`
+   - `npx next build --webpack`.
 
 Acceptance criteria:
 1. Dashboards expose promotion, rejection reasons, rewrite burden, duplicate-confirmed rate.

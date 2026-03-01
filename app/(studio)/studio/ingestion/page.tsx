@@ -11,6 +11,7 @@ import {
   type IngestionDuplicateRiskFilter,
   type IngestionPortfolioWindowDays,
   listIngestionCandidates,
+  listIngestionLabelQualityAnalytics,
   listIngestionSourcePortfolioMetrics,
   listIngestionSourceKeys,
   reactivateIngestionSource,
@@ -153,7 +154,7 @@ export default async function StudioIngestionPage({ searchParams }: IngestionPag
   const sourceSaved = (params.sourceSaved ?? "").trim();
   const sourceError = (params.sourceError ?? "").trim();
 
-  const [candidates, sourceKeys, sourcePortfolio] = await Promise.all([
+  const [candidates, sourceKeys, sourcePortfolio, labelQualityAnalytics] = await Promise.all([
     listIngestionCandidates({
       status,
       sourceKey: source || undefined,
@@ -166,7 +167,13 @@ export default async function StudioIngestionPage({ searchParams }: IngestionPag
     }),
     listIngestionSourceKeys(),
     listIngestionSourcePortfolioMetrics(portfolioWindow),
+    listIngestionLabelQualityAnalytics(portfolioWindow),
   ]);
+  const selectedLabelTrend =
+    labelQualityAnalytics.trendRows.find((row) => row.windowDays === portfolioWindow) ??
+    labelQualityAnalytics.trendRows[1] ??
+    labelQualityAnalytics.trendRows[0] ??
+    null;
   const reactivatableSources = sourcePortfolio.rows.filter((row) =>
     canReactivateIngestionSourceState(row.state),
   );
@@ -524,6 +531,199 @@ export default async function StudioIngestionPage({ searchParams }: IngestionPag
               </tbody>
             </table>
           </div>
+
+          <section className="space-y-3 rounded border border-zinc-200 bg-zinc-50 p-3">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-semibold">Label Quality Dashboard</h4>
+                <p className="text-xs text-zinc-600">
+                  Editorial quality KPIs by source and extraction strategy.
+                </p>
+              </div>
+              <p className="text-xs text-zinc-500">
+                Generated: {formatDateTime(labelQualityAnalytics.generatedAt)}
+              </p>
+            </div>
+
+            {selectedLabelTrend && (
+              <div className="grid gap-3 md:grid-cols-5">
+                <article className="rounded border border-zinc-200 bg-white p-3">
+                  <p className="text-xs uppercase tracking-wide text-zinc-500">Reviewed Labels</p>
+                  <p className="mt-1 text-2xl font-semibold">{selectedLabelTrend.reviewedLabels}</p>
+                  <p className="text-xs text-zinc-600">
+                    last {selectedLabelTrend.windowDays}d
+                  </p>
+                </article>
+                <article className="rounded border border-zinc-200 bg-white p-3">
+                  <p className="text-xs uppercase tracking-wide text-zinc-500">Promotion Rate</p>
+                  <p className="mt-1 text-2xl font-semibold">
+                    {formatPercent(selectedLabelTrend.promotionRate)}
+                  </p>
+                  <p className="text-xs text-zinc-600">
+                    {selectedLabelTrend.promotedLabels + selectedLabelTrend.promotedAfterEditLabels}/
+                    {selectedLabelTrend.reviewedLabels}
+                  </p>
+                </article>
+                <article className="rounded border border-zinc-200 bg-white p-3">
+                  <p className="text-xs uppercase tracking-wide text-zinc-500">Rejection Rate</p>
+                  <p className="mt-1 text-2xl font-semibold">
+                    {formatPercent(selectedLabelTrend.rejectionRate)}
+                  </p>
+                  <p className="text-xs text-zinc-600">
+                    {selectedLabelTrend.rejectedLabels}/{selectedLabelTrend.reviewedLabels}
+                  </p>
+                </article>
+                <article className="rounded border border-zinc-200 bg-white p-3">
+                  <p className="text-xs uppercase tracking-wide text-zinc-500">
+                    Duplicate Confirmed
+                  </p>
+                  <p className="mt-1 text-2xl font-semibold">
+                    {formatPercent(selectedLabelTrend.duplicateConfirmedRate)}
+                  </p>
+                </article>
+                <article className="rounded border border-zinc-200 bg-white p-3">
+                  <p className="text-xs uppercase tracking-wide text-zinc-500">Heavy Rewrite Share</p>
+                  <p className="mt-1 text-2xl font-semibold">
+                    {formatPercent(selectedLabelTrend.heavyRewriteShare)}
+                  </p>
+                </article>
+              </div>
+            )}
+
+            <div className="overflow-x-auto rounded border border-zinc-200">
+              <table className="min-w-full border-collapse text-sm">
+                <thead className="bg-zinc-100 text-left">
+                  <tr>
+                    <th className="border-b border-zinc-200 px-3 py-2">Window</th>
+                    <th className="border-b border-zinc-200 px-3 py-2">Reviewed</th>
+                    <th className="border-b border-zinc-200 px-3 py-2">Promotion Rate</th>
+                    <th className="border-b border-zinc-200 px-3 py-2">Rejection Rate</th>
+                    <th className="border-b border-zinc-200 px-3 py-2">Duplicate Confirmed</th>
+                    <th className="border-b border-zinc-200 px-3 py-2">Heavy Rewrite Share</th>
+                    <th className="border-b border-zinc-200 px-3 py-2">Top Reject Reasons</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {labelQualityAnalytics.trendRows.map((row) => (
+                    <tr key={row.windowDays}>
+                      <td className="border-b border-zinc-100 px-3 py-2">
+                        <p className="font-medium">Last {row.windowDays} days</p>
+                        <p className="text-xs text-zinc-600">from {formatDateTime(row.windowStartAt)}</p>
+                      </td>
+                      <td className="border-b border-zinc-100 px-3 py-2">{row.reviewedLabels}</td>
+                      <td className="border-b border-zinc-100 px-3 py-2">
+                        {formatPercent(row.promotionRate)}
+                      </td>
+                      <td className="border-b border-zinc-100 px-3 py-2">
+                        {formatPercent(row.rejectionRate)}
+                      </td>
+                      <td className="border-b border-zinc-100 px-3 py-2">
+                        {formatPercent(row.duplicateConfirmedRate)}
+                      </td>
+                      <td className="border-b border-zinc-100 px-3 py-2">
+                        {formatPercent(row.heavyRewriteShare)}
+                      </td>
+                      <td className="border-b border-zinc-100 px-3 py-2 text-xs text-zinc-600">
+                        {row.topRejectReasons.length === 0
+                          ? "-"
+                          : row.topRejectReasons
+                              .map((reason) => `${reason.code} (${reason.count})`)
+                              .join(", ")}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="grid gap-3 lg:grid-cols-2">
+              <div className="overflow-x-auto rounded border border-zinc-200 bg-white">
+                <table className="min-w-full border-collapse text-sm">
+                  <thead className="bg-zinc-100 text-left">
+                    <tr>
+                      <th className="border-b border-zinc-200 px-3 py-2">Source</th>
+                      <th className="border-b border-zinc-200 px-3 py-2">Reviewed</th>
+                      <th className="border-b border-zinc-200 px-3 py-2">Promotion</th>
+                      <th className="border-b border-zinc-200 px-3 py-2">Rejection</th>
+                      <th className="border-b border-zinc-200 px-3 py-2">Heavy Rewrite</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {labelQualityAnalytics.sourceRows.length === 0 && (
+                      <tr>
+                        <td className="px-3 py-4 text-center text-zinc-500" colSpan={5}>
+                          No label rows in selected window.
+                        </td>
+                      </tr>
+                    )}
+                    {labelQualityAnalytics.sourceRows.slice(0, 20).map((row) => (
+                      <tr key={row.sourceKey}>
+                        <td className="border-b border-zinc-100 px-3 py-2">
+                          <p className="font-medium">{row.displayName}</p>
+                          <p className="text-xs text-zinc-600">
+                            {row.sourceKey} • {row.state}
+                          </p>
+                        </td>
+                        <td className="border-b border-zinc-100 px-3 py-2">{row.reviewedLabels}</td>
+                        <td className="border-b border-zinc-100 px-3 py-2">
+                          {formatPercent(row.promotionRate)}
+                        </td>
+                        <td className="border-b border-zinc-100 px-3 py-2">
+                          <p>{formatPercent(row.rejectionRate)}</p>
+                          <p className="text-xs text-zinc-600">{row.topRejectReasonCode ?? "-"}</p>
+                        </td>
+                        <td className="border-b border-zinc-100 px-3 py-2">
+                          {formatPercent(row.heavyRewriteShare)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="overflow-x-auto rounded border border-zinc-200 bg-white">
+                <table className="min-w-full border-collapse text-sm">
+                  <thead className="bg-zinc-100 text-left">
+                    <tr>
+                      <th className="border-b border-zinc-200 px-3 py-2">Strategy</th>
+                      <th className="border-b border-zinc-200 px-3 py-2">Reviewed</th>
+                      <th className="border-b border-zinc-200 px-3 py-2">Promotion</th>
+                      <th className="border-b border-zinc-200 px-3 py-2">Rejection</th>
+                      <th className="border-b border-zinc-200 px-3 py-2">Duplicate</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {labelQualityAnalytics.strategyRows.length === 0 && (
+                      <tr>
+                        <td className="px-3 py-4 text-center text-zinc-500" colSpan={5}>
+                          No strategy slices in selected window.
+                        </td>
+                      </tr>
+                    )}
+                    {labelQualityAnalytics.strategyRows.map((row) => (
+                      <tr key={row.strategy}>
+                        <td className="border-b border-zinc-100 px-3 py-2">
+                          <p className="font-medium">{row.strategy}</p>
+                          <p className="text-xs text-zinc-600">{row.sourceCount} sources</p>
+                        </td>
+                        <td className="border-b border-zinc-100 px-3 py-2">{row.reviewedLabels}</td>
+                        <td className="border-b border-zinc-100 px-3 py-2">
+                          {formatPercent(row.promotionRate)}
+                        </td>
+                        <td className="border-b border-zinc-100 px-3 py-2">
+                          <p>{formatPercent(row.rejectionRate)}</p>
+                          <p className="text-xs text-zinc-600">{row.topRejectReasonCode ?? "-"}</p>
+                        </td>
+                        <td className="border-b border-zinc-100 px-3 py-2">
+                          {formatPercent(row.duplicateConfirmedRate)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
 
           <section className="space-y-3 rounded border border-zinc-200 bg-zinc-50 p-3">
             <div>
