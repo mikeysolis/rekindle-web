@@ -26,6 +26,8 @@
 # misc
 .DS_Store
 *.pem
+/tmp/
+/snapshots/
 
 # debug
 npm-debug.log*

@@ -87,6 +87,13 @@ node scripts/validate-env.mjs --runtime pipeline-reconcile
 
 Use this when bootstrapping a local session.
 
+One-command drill helpers:
+
+```bash
+npm run ingest:drill
+npm run ingest:drill:run
+```
+
 1. List available source keys:
 
 ```bash
@@ -251,6 +258,16 @@ In `Studio > Ingestion` admin controls:
 1. Record experiment metadata and rollout evidence
 2. Validate guardrails before full adopt
 3. Use rollback action if regressions occur
+
+### 6.5 In-app drill trigger (Admin)
+
+In `Studio > Ingestion > System Usage & Local Drill`:
+
+1. Review embedded quick checklist
+2. Set source keys (comma separated)
+3. Optional: skip source runs
+4. Click `Start Local Drill`
+5. Monitor latest log tail shown in-page (`tmp/ingest-local-drill.log`)
 
 ## 7) Data Cleanup and Reset Usage
 

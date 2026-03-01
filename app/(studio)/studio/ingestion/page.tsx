@@ -1,3 +1,7 @@
+import { spawn } from "node:child_process";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -43,12 +47,54 @@ type IngestionPageProps = {
     portfolioWindow?: string;
     sourceSaved?: string;
     sourceError?: string;
+    drillSaved?: string;
+    drillError?: string;
     experimentSaved?: string;
     experimentError?: string;
     rollbackSaved?: string;
     rollbackError?: string;
   }>;
 };
+
+const DEFAULT_DRILL_SOURCES = ["rak", "ggia"] as const;
+const DRILL_LOG_PATH = resolve(process.cwd(), "tmp", "ingest-local-drill.log");
+
+function parseDrillSourcesInput(value: string): string[] {
+  const parsed = value
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter((item) => item.length > 0);
+
+  if (parsed.length === 0) {
+    return [...DEFAULT_DRILL_SOURCES];
+  }
+
+  for (const source of parsed) {
+    if (!/^[a-z0-9_]+$/.test(source)) {
+      throw new Error(
+        `Invalid source key "${source}". Only lowercase letters, numbers, and underscores are allowed.`,
+      );
+    }
+  }
+
+  return parsed;
+}
+
+function readDrillLogTail(maxChars = 6000): string | null {
+  if (!existsSync(DRILL_LOG_PATH)) {
+    return null;
+  }
+
+  try {
+    const content = readFileSync(DRILL_LOG_PATH, "utf8");
+    if (content.length <= maxChars) {
+      return content;
+    }
+    return content.slice(content.length - maxChars);
+  } catch {
+    return null;
+  }
+}
 
 const STATUS_OPTIONS: Array<{ label: string; value: IngestCandidateStatus }> = [
   { label: "New", value: "new" },
@@ -217,10 +263,13 @@ export default async function StudioIngestionPage({ searchParams }: IngestionPag
   const portfolioWindow = parsePortfolioWindow((params.portfolioWindow ?? "").trim());
   const sourceSaved = (params.sourceSaved ?? "").trim();
   const sourceError = (params.sourceError ?? "").trim();
+  const drillSaved = (params.drillSaved ?? "").trim();
+  const drillError = (params.drillError ?? "").trim();
   const experimentSaved = (params.experimentSaved ?? "").trim();
   const experimentError = (params.experimentError ?? "").trim();
   const rollbackSaved = (params.rollbackSaved ?? "").trim();
   const rollbackError = (params.rollbackError ?? "").trim();
+  const drillLogTail = readDrillLogTail();
 
   const [candidates, sourceKeys, sourcePortfolio, labelQualityAnalytics, experimentRollouts] =
     await Promise.all([
@@ -357,6 +406,71 @@ export default async function StudioIngestionPage({ searchParams }: IngestionPag
     const queryParams = new URLSearchParams(baseQueryEntries);
     queryParams.set("source", sourceKey);
     queryParams.set("sourceSaved", `Retired source ${sourceKey}.`);
+    const queryString = queryParams.toString();
+    redirect(queryString.length > 0 ? `/studio/ingestion?${queryString}` : "/studio/ingestion");
+  }
+
+  async function startLocalDrillAction(formData: FormData) {
+    "use server";
+
+    await requireStudioUser("admin");
+
+    const sourcesInput = String(formData.get("drill_sources") ?? "").trim();
+    const skipSourceRuns = isChecked(formData.get("drill_skip_source_runs"));
+
+    const queryParams = new URLSearchParams(baseQueryEntries);
+
+    try {
+      const isProduction = process.env.NODE_ENV === "production";
+      const ingestEnvironment = (process.env.INGEST_ENVIRONMENT ?? "").trim().toLowerCase();
+      const ingestUrl = (process.env.INGEST_SUPABASE_URL ?? "").trim().toLowerCase();
+
+      if (isProduction) {
+        throw new Error("Drill run is disabled in production.");
+      }
+
+      const localUrl =
+        ingestUrl.includes("127.0.0.1") || ingestUrl.includes("localhost");
+      const localEnvironment =
+        ingestEnvironment.length === 0 || ingestEnvironment === "local";
+      if (!localUrl && !localEnvironment) {
+        throw new Error(
+          "Drill run is only allowed for local ingestion environments (localhost or INGEST_ENVIRONMENT=local).",
+        );
+      }
+
+      const sources = parseDrillSourcesInput(sourcesInput);
+      const scriptPath = resolve(process.cwd(), "scripts", "ingest-local-drill.mjs");
+      const args = [scriptPath, "--run", "--sources", sources.join(",")];
+
+      if (skipSourceRuns) {
+        args.push("--skip-source-runs");
+      }
+
+      mkdirSync(dirname(DRILL_LOG_PATH), { recursive: true });
+      const fd = openSync(DRILL_LOG_PATH, "a");
+
+      try {
+        const child = spawn(process.execPath, args, {
+          cwd: process.cwd(),
+          env: process.env,
+          detached: true,
+          stdio: ["ignore", fd, fd],
+        });
+        child.unref();
+      } finally {
+        closeSync(fd);
+      }
+
+      queryParams.set(
+        "drillSaved",
+        `Started local drill for sources: ${sources.join(", ")}${skipSourceRuns ? " (source runs skipped)" : ""}.`,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      queryParams.set("drillError", message);
+    }
+
     const queryString = queryParams.toString();
     redirect(queryString.length > 0 ? `/studio/ingestion?${queryString}` : "/studio/ingestion");
   }
@@ -610,6 +724,112 @@ export default async function StudioIngestionPage({ searchParams }: IngestionPag
             </button>
           </div>
         </form>
+
+        <section className="space-y-3 rounded border border-zinc-300 bg-white p-4">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-semibold">System Usage &amp; Local Drill</h3>
+              <p className="text-xs text-zinc-600">
+                Operator guide and one-click local drill trigger for practicing ingestion workflows.
+              </p>
+            </div>
+            <p className="text-xs text-zinc-500">
+              Guide:{" "}
+              <code>docs/specs/ingestion/17_system_usage_guide.md</code>
+            </p>
+          </div>
+
+          {drillSaved && (
+            <p className="rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+              {drillSaved}
+            </p>
+          )}
+          {drillError && (
+            <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {drillError}
+            </p>
+          )}
+
+          <details className="rounded border border-zinc-200 bg-zinc-50 p-3" open>
+            <summary className="cursor-pointer text-sm font-semibold">
+              Quick Drill Checklist
+            </summary>
+            <div className="mt-3 space-y-2 text-xs text-zinc-700">
+              <p>
+                1) Preflight: validate envs and Supabase status for <code>./db</code> and{" "}
+                <code>./ingestion</code>.
+              </p>
+              <p>
+                2) Generate data: run <code>pipeline:list-sources</code>,{" "}
+                <code>pipeline:source-health</code>, and source runs.
+              </p>
+              <p>
+                3) Studio practice: perform one Reject, one Needs Work, and one Promote.
+              </p>
+              <p>
+                4) Replay practice: run <code>pipeline:replay-run</code> with and without config
+                override.
+              </p>
+              <p>
+                5) Cleanup: run <code>ingest:cleanup:sql</code> and apply cleanup SQL locally.
+              </p>
+              <p>
+                Full workflow: <code>docs/specs/ingestion/17_system_usage_guide.md</code>
+              </p>
+            </div>
+          </details>
+
+          {!canGovernSources && (
+            <p className="rounded border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
+              Admin role is required to start drill runs from Studio.
+            </p>
+          )}
+
+          {canGovernSources && (
+            <form
+              action={startLocalDrillAction}
+              className="grid gap-3 rounded border border-zinc-200 bg-zinc-50 p-3 md:grid-cols-3"
+            >
+              <label className="text-sm md:col-span-2">
+                <span className="mb-1 block font-medium">Source keys (comma separated)</span>
+                <input
+                  name="drill_sources"
+                  defaultValue={DEFAULT_DRILL_SOURCES.join(",")}
+                  placeholder="rak,ggia"
+                  className="w-full rounded border border-zinc-300 px-3 py-2"
+                />
+              </label>
+              <label className="flex items-end gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  name="drill_skip_source_runs"
+                  className="rounded border-zinc-300"
+                />
+                <span>Skip source run commands</span>
+              </label>
+              <div className="md:col-span-3">
+                <button
+                  type="submit"
+                  className="rounded border border-zinc-900 bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700"
+                >
+                  Start Local Drill
+                </button>
+              </div>
+            </form>
+          )}
+
+          <details className="rounded border border-zinc-200 bg-zinc-50 p-3">
+            <summary className="cursor-pointer text-sm font-semibold">
+              Local Drill Log (latest tail)
+            </summary>
+            <pre className="mt-3 max-h-64 overflow-auto rounded border border-zinc-200 bg-zinc-950 p-3 text-[11px] text-zinc-100">
+              {drillLogTail ?? "No local drill log found yet."}
+            </pre>
+            <p className="mt-2 text-xs text-zinc-600">
+              Log file: <code>tmp/ingest-local-drill.log</code>
+            </p>
+          </details>
+        </section>
 
         <section className="space-y-3 rounded border border-zinc-300 bg-white p-4">
           <div className="flex flex-wrap items-end justify-between gap-3">

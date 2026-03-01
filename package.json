@@ -37,6 +37,8 @@
     "ingest:supabase:reset": "node scripts/ingest-db-ops.mjs reset-local",
     "ingest:supabase:reset:linked": "node scripts/ingest-db-ops.mjs reset-linked",
     "ingest:cleanup:sql": "node scripts/ingest-db-ops.mjs cleanup-sql",
+    "ingest:drill": "node scripts/ingest-local-drill.mjs --print",
+    "ingest:drill:run": "node scripts/ingest-local-drill.mjs --run",
     "types:gen:local": "supabase gen types typescript --local --schema public > lib/database/types.gen.ts --workdir ./db"
   },
   "dependencies": {

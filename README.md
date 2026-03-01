@@ -11,6 +11,9 @@ This repo contains:
 For a full end-to-end operator guide, start here:
 
 - `docs/specs/ingestion/17_system_usage_guide.md`
+- Quick drill commands:
+  - `npm run ingest:drill`
+  - `npm run ingest:drill:run`
 
 For the full ingestion spec pack/document map:
 
