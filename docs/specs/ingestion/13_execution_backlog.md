@@ -288,10 +288,23 @@ Acceptance criteria:
 Dependencies: ING-020
 
 Checklist:
-- [ ] Add `ggia` module.
-- [ ] Add `dosomething` module.
-- [ ] Add `action_for_happiness` module (ICS-first where available).
-- [ ] Add `red_cross_pdf` module.
+- [x] Add `ggia` module.
+- [x] Add `dosomething` module.
+- [x] Add `action_for_happiness` module (ICS-first where available).
+- [x] Add `red_cross_pdf` module.
+
+Verification note:
+1. Added source modules:
+   - `pipeline/src/sources/ggia/index.ts`
+   - `pipeline/src/sources/dosomething/index.ts`
+   - `pipeline/src/sources/action_for_happiness/index.ts`
+   - `pipeline/src/sources/red_cross_pdf/index.ts`
+2. `action_for_happiness` extraction is ICS-first (`ics_event_feed`) when `.ics` pages are discovered.
+3. Added source fixture suites + contract tests for all Tier-1 modules:
+   - `pipeline/src/sources/*/fixtures/*`
+   - `pipeline/src/sources/*/source.contract.test.ts`
+4. Source registry now includes all Tier-1 modules and `pipeline:list-sources` exposes keys:
+   - `rak`, `ggia`, `dosomething`, `action_for_happiness`, `red_cross_pdf`.
 
 Acceptance criteria:
 1. Each module passes contract tests and produces candidates in staging.

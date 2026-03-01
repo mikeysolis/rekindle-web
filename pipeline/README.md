@@ -8,6 +8,14 @@ Current CLI commands:
 - `run-source <source_key>`
 - `reconcile-promotions`
 
+Current source keys:
+
+- `rak`
+- `ggia`
+- `dosomething`
+- `action_for_happiness`
+- `red_cross_pdf`
+
 Source fixture tests:
 
 - `npm run pipeline:test:rak`

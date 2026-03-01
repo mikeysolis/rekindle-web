@@ -17,7 +17,7 @@
     "lint": "eslint",
     "pipeline:build": "tsc -p ./pipeline/tsconfig.json",
     "pipeline:test:rak": "npm run pipeline:build --silent && node --test ./pipeline/dist/sources/rak/parser.test.js",
-    "pipeline:test:sources": "npm run pipeline:build --silent && node --test ./pipeline/dist/sources/contract.test.js ./pipeline/dist/sources/rak/source.contract.test.js",
+    "pipeline:test:sources": "npm run pipeline:build --silent && node --test ./pipeline/dist/sources/contract.test.js ./pipeline/dist/sources/rak/source.contract.test.js ./pipeline/dist/sources/ggia/source.contract.test.js ./pipeline/dist/sources/dosomething/source.contract.test.js ./pipeline/dist/sources/action_for_happiness/source.contract.test.js ./pipeline/dist/sources/red_cross_pdf/source.contract.test.js",
     "pipeline:test:quality": "npm run pipeline:build --silent && node --test ./pipeline/dist/core/quality.test.js",
     "pipeline:test:reconcile": "npm run pipeline:build --silent && node --test ./pipeline/dist/jobs/reconcile-promotions.test.js",
     "pipeline:list-sources": "npm run pipeline:build --silent && node ./pipeline/dist/index.js list-sources",
