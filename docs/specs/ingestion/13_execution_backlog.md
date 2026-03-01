@@ -233,9 +233,20 @@ Acceptance criteria:
 Dependencies: ING-005, ING-012
 
 Checklist:
-- [ ] Document replay flow by run ID.
-- [ ] Document ingest-table truncate workflow.
-- [ ] Document failure-response steps for common ingestion incidents.
+- [x] Document replay flow by run ID.
+- [x] Document ingest-table truncate workflow.
+- [x] Document failure-response steps for common ingestion incidents.
+
+Verification note:
+1. Expanded operations runbook in `15_operations_runbook.md` with run-ID-based replay procedure (identify run, baseline capture, replay execution, verification).
+2. Added explicit ingest-table truncate workflow for local and linked ingestion targets, including verification SQL checks.
+3. Added incident playbooks for:
+   - source extraction breakage
+   - ingestion DB connectivity failure
+   - promotion/reconciliation desync
+   - duplicate explosion
+   - low-quality surge
+4. Runbook now includes preflight validation and post-incident closure checklist to reduce tribal knowledge dependency.
 
 Acceptance criteria:
 1. On-call engineer can execute replay/reset from runbook without tribal knowledge.
@@ -500,4 +511,4 @@ After Epic 4:
 7. [x] ING-011
 8. [x] ING-012
 9. [x] ING-013
-10. [ ] ING-014
+10. [x] ING-014
