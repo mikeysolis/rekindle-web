@@ -18,6 +18,84 @@ export type IngestionConfidenceBand = "high" | "medium" | "low" | "unknown";
 export type IngestionConfidenceFilter = "all" | IngestionConfidenceBand;
 export type IngestionDuplicateRisk = "likely" | "low";
 export type IngestionDuplicateRiskFilter = "all" | IngestionDuplicateRisk;
+export type IngestionRewriteSeverity = "light" | "moderate" | "heavy";
+export type IngestionEditorLabelAction =
+  | "promoted"
+  | "promoted_after_edit"
+  | "rejected"
+  | "needs_work";
+
+export const INGEST_REWRITE_SEVERITY_OPTIONS: readonly IngestionRewriteSeverity[] = [
+  "light",
+  "moderate",
+  "heavy",
+] as const;
+
+export const INGEST_REJECTION_REASON_CODES = [
+  "not_actionable",
+  "too_vague_or_generic",
+  "duplicate_existing_idea",
+  "safety_or_harm_risk",
+  "policy_or_compliance_risk",
+  "off_topic_for_rekindle",
+  "low_content_quality",
+  "extraction_error_or_incomplete",
+  "paywalled_or_missing_context",
+] as const;
+
+export type IngestionRejectionReasonCode = (typeof INGEST_REJECTION_REASON_CODES)[number];
+
+export const INGEST_REJECTION_REASON_OPTIONS: Array<{
+  code: IngestionRejectionReasonCode;
+  label: string;
+  description: string;
+}> = [
+  {
+    code: "not_actionable",
+    label: "Not actionable",
+    description: "Does not contain a clear action the user can take.",
+  },
+  {
+    code: "too_vague_or_generic",
+    label: "Too vague",
+    description: "Idea is too generic to be useful without major interpretation.",
+  },
+  {
+    code: "duplicate_existing_idea",
+    label: "Duplicate idea",
+    description: "Substantially duplicates an existing candidate or draft.",
+  },
+  {
+    code: "safety_or_harm_risk",
+    label: "Safety risk",
+    description: "Could cause physical, emotional, or relational harm.",
+  },
+  {
+    code: "policy_or_compliance_risk",
+    label: "Policy risk",
+    description: "Violates legal/compliance or source usage constraints.",
+  },
+  {
+    code: "off_topic_for_rekindle",
+    label: "Off-topic",
+    description: "Does not fit Rekindle product purpose or audience.",
+  },
+  {
+    code: "low_content_quality",
+    label: "Low quality",
+    description: "Content quality is weak (spammy, incoherent, or low signal).",
+  },
+  {
+    code: "extraction_error_or_incomplete",
+    label: "Extraction error",
+    description: "Parser captured broken/incomplete text, making the idea unusable.",
+  },
+  {
+    code: "paywalled_or_missing_context",
+    label: "Missing context",
+    description: "Source requires unavailable context/paywall to validate usefulness.",
+  },
+];
 
 export type IngestionCandidate = {
   id: string;
@@ -293,6 +371,8 @@ const RETIRABLE_SOURCE_STATE_SET = new Set<IngestionSourceLifecycleState>([
   "degraded",
   "paused",
 ]);
+const REWRITE_SEVERITY_SET = new Set<IngestionRewriteSeverity>(INGEST_REWRITE_SEVERITY_OPTIONS);
+const REJECTION_REASON_SET = new Set<IngestionRejectionReasonCode>(INGEST_REJECTION_REASON_CODES);
 const LIFECYCLE_WORKFLOW_VERSION = "ing033_v1";
 
 function parseSourceLifecycleState(
@@ -317,6 +397,25 @@ export function canReactivateIngestionSourceState(state: string): boolean {
 export function canRetireIngestionSourceState(state: string): boolean {
   const parsed = parseSourceLifecycleState(state);
   return parsed ? RETIRABLE_SOURCE_STATE_SET.has(parsed) : false;
+}
+
+function normalizeRewriteSeverity(
+  value: string,
+  label = "Rewrite severity",
+): IngestionRewriteSeverity {
+  const trimmed = value.trim();
+  if (!REWRITE_SEVERITY_SET.has(trimmed as IngestionRewriteSeverity)) {
+    throw new Error(`${label} must be one of: light, moderate, heavy.`);
+  }
+  return trimmed as IngestionRewriteSeverity;
+}
+
+function normalizeRejectReasonCode(value: string): IngestionRejectionReasonCode {
+  const trimmed = value.trim();
+  if (!REJECTION_REASON_SET.has(trimmed as IngestionRejectionReasonCode)) {
+    throw new Error("Reject reason code is required and must use the standard taxonomy.");
+  }
+  return trimmed as IngestionRejectionReasonCode;
 }
 
 function toMetaJson(value: unknown): Record<string, unknown> {
@@ -1409,6 +1508,10 @@ function appendStudioReviewMetadata(params: {
   action: "reject" | "needs_work";
   note: string | null;
   actorUserId: string;
+  labelAction: IngestionEditorLabelAction;
+  rejectReasonCode?: IngestionRejectionReasonCode | null;
+  rewriteSeverity?: IngestionRewriteSeverity | null;
+  duplicateConfirmed: boolean;
 }): Record<string, unknown> {
   return {
     ...params.existingMeta,
@@ -1417,15 +1520,46 @@ function appendStudioReviewMetadata(params: {
       last_note: params.note,
       last_actor_user_id: params.actorUserId,
       last_action_at: new Date().toISOString(),
+      last_label_action: params.labelAction,
+      last_reject_reason_code: params.rejectReasonCode ?? null,
+      last_rewrite_severity: params.rewriteSeverity ?? null,
+      last_duplicate_confirmed: params.duplicateConfirmed,
     },
   };
+}
+
+async function insertIngestionEditorLabel(params: {
+  candidateId: string;
+  action: IngestionEditorLabelAction;
+  rejectReasonCode?: IngestionRejectionReasonCode | null;
+  rewriteSeverity?: IngestionRewriteSeverity | null;
+  duplicateConfirmed: boolean;
+  actorUserId: string;
+}): Promise<void> {
+  const ingest = createIngestionServiceRoleClient();
+  const { error } = await ingest.from("ingest_editor_labels").insert({
+    candidate_id: params.candidateId,
+    action: params.action,
+    reject_reason_code: params.rejectReasonCode ?? null,
+    rewrite_severity: params.rewriteSeverity ?? null,
+    duplicate_confirmed: params.duplicateConfirmed,
+    actor_user_id: params.actorUserId,
+  });
+
+  if (error) {
+    throw new Error(`Failed to write ingestion editor label: ${error.message}`);
+  }
 }
 
 async function setCandidateStatusWithNote(params: {
   candidateId: string;
   status: IngestCandidateStatus;
   action: "reject" | "needs_work";
+  labelAction: IngestionEditorLabelAction;
   note: string | null;
+  rejectReasonCode?: IngestionRejectionReasonCode | null;
+  rewriteSeverity?: IngestionRewriteSeverity | null;
+  duplicateConfirmed: boolean;
   actorUserId: string;
 }): Promise<void> {
   const ingest = createIngestionServiceRoleClient();
@@ -1449,6 +1583,10 @@ async function setCandidateStatusWithNote(params: {
     action: params.action,
     note: params.note,
     actorUserId: params.actorUserId,
+    labelAction: params.labelAction,
+    rejectReasonCode: params.rejectReasonCode,
+    rewriteSeverity: params.rewriteSeverity,
+    duplicateConfirmed: params.duplicateConfirmed,
   });
 
   const { error: updateError } = await ingest
@@ -1462,18 +1600,34 @@ async function setCandidateStatusWithNote(params: {
   if (updateError) {
     throw new Error(`Failed to update candidate status: ${updateError.message}`);
   }
+
+  await insertIngestionEditorLabel({
+    candidateId: params.candidateId,
+    action: params.labelAction,
+    rejectReasonCode: params.rejectReasonCode,
+    rewriteSeverity: params.rewriteSeverity,
+    duplicateConfirmed: params.duplicateConfirmed,
+    actorUserId: params.actorUserId,
+  });
 }
 
 export async function rejectIngestionCandidate(params: {
   candidateId: string;
   actorUserId: string;
   note: string | null;
+  rejectReasonCode: string;
+  duplicateConfirmed: boolean;
 }): Promise<void> {
+  const rejectReasonCode = normalizeRejectReasonCode(params.rejectReasonCode);
+
   await setCandidateStatusWithNote({
     candidateId: params.candidateId,
     status: "rejected",
     action: "reject",
+    labelAction: "rejected",
     note: params.note,
+    rejectReasonCode,
+    duplicateConfirmed: params.duplicateConfirmed,
     actorUserId: params.actorUserId,
   });
 }
@@ -1482,12 +1636,19 @@ export async function markIngestionCandidateNeedsWork(params: {
   candidateId: string;
   actorUserId: string;
   note: string | null;
+  rewriteSeverity: string;
+  duplicateConfirmed: boolean;
 }): Promise<void> {
+  const rewriteSeverity = normalizeRewriteSeverity(params.rewriteSeverity);
+
   await setCandidateStatusWithNote({
     candidateId: params.candidateId,
     status: "curated",
     action: "needs_work",
+    labelAction: "needs_work",
     note: params.note,
+    rewriteSeverity,
+    duplicateConfirmed: params.duplicateConfirmed,
     actorUserId: params.actorUserId,
   });
 }
@@ -1732,10 +1893,17 @@ async function getCandidateTraits(candidateId: string): Promise<IngestionCandida
 export async function promoteIngestionCandidateToDraft(params: {
   candidateId: string;
   actorUserId: string;
+  rewriteSeverity: string;
+  duplicateConfirmed: boolean;
+  promotedAfterEdit: boolean;
 }): Promise<PromoteIngestionCandidateResult> {
   const warnings: string[] = [];
   const appSupabase = await createSupabaseServerClient();
   const ingest = createIngestionServiceRoleClient();
+  const rewriteSeverity = normalizeRewriteSeverity(params.rewriteSeverity);
+  const labelAction: IngestionEditorLabelAction = params.promotedAfterEdit
+    ? "promoted_after_edit"
+    : "promoted";
 
   const { data: candidateRow, error: candidateError } = await ingest
     .from("ingest_candidates")
@@ -1838,6 +2006,18 @@ export async function promoteIngestionCandidateToDraft(params: {
 
   try {
     await updateCandidateStatus(params.candidateId, "pushed_to_studio");
+  } catch (error) {
+    warnings.push(error instanceof Error ? error.message : String(error));
+  }
+
+  try {
+    await insertIngestionEditorLabel({
+      candidateId: params.candidateId,
+      action: labelAction,
+      rewriteSeverity,
+      duplicateConfirmed: params.duplicateConfirmed,
+      actorUserId: params.actorUserId,
+    });
   } catch (error) {
     warnings.push(error instanceof Error ? error.message : String(error));
   }

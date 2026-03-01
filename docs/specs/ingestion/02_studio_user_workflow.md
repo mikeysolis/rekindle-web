@@ -41,18 +41,27 @@ Machine-side statuses:
 
 1. Reject:
    - set status `rejected`
-   - capture reason/note
-   - write sync/audit log
+   - require standardized `reject_reason_code`
+   - require duplicate confirmation (`true|false`)
+   - optional freeform note
+   - write label row to `ingest_editor_labels`
 
 2. Needs Work:
    - set status `curated`
-   - capture note for later revision
+   - require rewrite severity (`light|moderate|heavy`)
+   - require duplicate confirmation (`true|false`)
+   - optional note for later revision
+   - write label row to `ingest_editor_labels`
    - keep candidate discoverable in inbox
 
 3. Promote to Draft:
    - idempotent create/find draft
    - map candidate fields to draft fields
    - optionally map trait hints
+   - require promotion type (`promoted` vs `promoted_after_edit`)
+   - require rewrite severity (`light|moderate|heavy`)
+   - require duplicate confirmation (`true|false`)
+   - write label row to `ingest_editor_labels`
    - set candidate status `pushed_to_studio`
    - write sync log with mapping
 
@@ -86,6 +95,18 @@ Every action should produce structured labels:
 5. degree of manual rewrite needed
 
 These labels are mandatory inputs for tuning extraction quality.
+
+## 6.1) Rejection Reason Taxonomy (v1 UI)
+
+1. `not_actionable`
+2. `too_vague_or_generic`
+3. `duplicate_existing_idea`
+4. `safety_or_harm_risk`
+5. `policy_or_compliance_risk`
+6. `off_topic_for_rekindle`
+7. `low_content_quality`
+8. `extraction_error_or_incomplete`
+9. `paywalled_or_missing_context`
 
 ## 7) Source Lifecycle Governance (Admin)
 

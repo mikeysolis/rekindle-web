@@ -31,9 +31,9 @@ Core Studio ingestion service functions:
 
 1. `listIngestionCandidates(filters)`
 2. `getIngestionCandidateDetail(candidateId)`
-3. `rejectIngestionCandidate({candidateId, actorUserId, note})`
-4. `markIngestionCandidateNeedsWork({candidateId, actorUserId, note})`
-5. `promoteIngestionCandidateToDraft({candidateId, actorUserId})`
+3. `rejectIngestionCandidate({candidateId, actorUserId, note, rejectReasonCode, duplicateConfirmed})`
+4. `markIngestionCandidateNeedsWork({candidateId, actorUserId, note, rewriteSeverity, duplicateConfirmed})`
+5. `promoteIngestionCandidateToDraft({candidateId, actorUserId, rewriteSeverity, duplicateConfirmed, promotedAfterEdit})`
 6. `reactivateIngestionSource({sourceKey, actorUserId, reason, productOwnerApproved, complianceAcknowledged})`
 7. `retireIngestionSource({sourceKey, actorUserId, reason, productOwnerApproved, complianceAcknowledged, archivalReference, archivalSummary})`
 

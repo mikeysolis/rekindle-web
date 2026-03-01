@@ -507,9 +507,29 @@ Gate for Epic 3:
 Dependencies: ING-003, ING-013
 
 Checklist:
-- [ ] Add required fields to reject/promote/needs-work flows.
-- [ ] Standardize rejection reason taxonomy in UI.
-- [ ] Persist label events to `ingest_editor_labels`.
+- [x] Add required fields to reject/promote/needs-work flows.
+- [x] Standardize rejection reason taxonomy in UI.
+- [x] Persist label events to `ingest_editor_labels`.
+
+Verification note:
+1. Added structured editor-label contracts in Studio ingestion service:
+   - rewrite severity enum and validation
+   - rejection reason taxonomy constants and validation
+   - editor label action mapping (`promoted|promoted_after_edit|rejected|needs_work`)
+   (`lib/studio/ingestion.ts`).
+2. `reject`, `needs_work`, and `promote` mutations now persist label rows to:
+   - `public.ingest_editor_labels`
+   with `candidate_id`, action, reject reason (when applicable), rewrite severity (when applicable),
+   duplicate confirmation, actor, and timestamp defaults.
+3. Studio ingestion detail actions now require structured fields before submit:
+   - Promote: promotion type, rewrite severity, duplicate confirmation
+   - Needs Work: rewrite severity, duplicate confirmation
+   - Reject: standardized reject reason code, duplicate confirmation
+   (`app/(studio)/studio/ingestion/[id]/page.tsx`).
+4. Verified on 2026-03-01:
+   - `npx eslint 'app/(studio)/studio/ingestion/[id]/page.tsx' lib/studio/ingestion.ts`
+   - `npx tsc --noEmit`
+   - `npx next build --webpack`.
 
 Acceptance criteria:
 1. >= 95% of reviewed candidates produce complete label rows.

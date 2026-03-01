@@ -20,6 +20,16 @@ Storage contract:
 
 1. persist label rows in `ingest_editor_labels`
 2. include `candidate_id`, `actor_user_id`, and timestamp for every label
+3. enforce standardized reject reason taxonomy in Studio UI:
+   - `not_actionable`
+   - `too_vague_or_generic`
+   - `duplicate_existing_idea`
+   - `safety_or_harm_risk`
+   - `policy_or_compliance_risk`
+   - `off_topic_for_rekindle`
+   - `low_content_quality`
+   - `extraction_error_or_incomplete`
+   - `paywalled_or_missing_context`
 
 ## 3) Quality Scoring Stages
 

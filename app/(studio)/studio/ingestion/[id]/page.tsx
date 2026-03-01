@@ -5,6 +5,8 @@ import StudioShell from "@/components/studio/StudioShell";
 import { requireStudioUser } from "@/lib/studio/auth";
 import {
   getIngestionCandidateDetail,
+  INGEST_REJECTION_REASON_OPTIONS,
+  INGEST_REWRITE_SEVERITY_OPTIONS,
   markIngestionCandidateNeedsWork,
   promoteIngestionCandidateToDraft,
   rejectIngestionCandidate,
@@ -36,6 +38,10 @@ function normalizeNote(value: FormDataEntryValue | null): string | null {
 
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function isChecked(value: FormDataEntryValue | null): boolean {
+  return value === "on" || value === "true" || value === "1";
 }
 
 function serializeMeta(value: Record<string, unknown>): string {
@@ -99,15 +105,27 @@ export default async function StudioIngestionDetailPage({
 
     const actingUser = await requireStudioUser("editor");
     const candidateId = String(formData.get("candidate_id") ?? "");
+    const rejectReasonCode = String(formData.get("reject_reason_code") ?? "").trim();
+    const duplicateConfirmed = isChecked(formData.get("duplicate_confirmed"));
 
     if (!candidateId || candidateId !== id) {
       redirect(`/studio/ingestion/${id}?error=${encodeURIComponent("Invalid candidate id.")}`);
+    }
+
+    if (!rejectReasonCode) {
+      redirect(
+        `/studio/ingestion/${id}?error=${encodeURIComponent(
+          "Reject reason code is required.",
+        )}`,
+      );
     }
 
     await rejectIngestionCandidate({
       candidateId,
       actorUserId: actingUser.userId,
       note: normalizeNote(formData.get("note")),
+      rejectReasonCode,
+      duplicateConfirmed,
     });
 
     redirect(`/studio/ingestion/${candidateId}?saved=rejected`);
@@ -118,15 +136,27 @@ export default async function StudioIngestionDetailPage({
 
     const actingUser = await requireStudioUser("editor");
     const candidateId = String(formData.get("candidate_id") ?? "");
+    const rewriteSeverity = String(formData.get("rewrite_severity") ?? "").trim();
+    const duplicateConfirmed = isChecked(formData.get("duplicate_confirmed"));
 
     if (!candidateId || candidateId !== id) {
       redirect(`/studio/ingestion/${id}?error=${encodeURIComponent("Invalid candidate id.")}`);
+    }
+
+    if (!rewriteSeverity) {
+      redirect(
+        `/studio/ingestion/${id}?error=${encodeURIComponent(
+          "Rewrite severity is required for needs-work labels.",
+        )}`,
+      );
     }
 
     await markIngestionCandidateNeedsWork({
       candidateId,
       actorUserId: actingUser.userId,
       note: normalizeNote(formData.get("note")),
+      rewriteSeverity,
+      duplicateConfirmed,
     });
 
     redirect(`/studio/ingestion/${candidateId}?saved=needs-work`);
@@ -137,14 +167,28 @@ export default async function StudioIngestionDetailPage({
 
     const actingUser = await requireStudioUser("editor");
     const candidateId = String(formData.get("candidate_id") ?? "");
+    const rewriteSeverity = String(formData.get("rewrite_severity") ?? "").trim();
+    const duplicateConfirmed = isChecked(formData.get("duplicate_confirmed"));
+    const promotedAfterEdit = isChecked(formData.get("promoted_after_edit"));
 
     if (!candidateId || candidateId !== id) {
       redirect(`/studio/ingestion/${id}?error=${encodeURIComponent("Invalid candidate id.")}`);
     }
 
+    if (!rewriteSeverity) {
+      redirect(
+        `/studio/ingestion/${id}?error=${encodeURIComponent(
+          "Rewrite severity is required for promotion labels.",
+        )}`,
+      );
+    }
+
     const result = await promoteIngestionCandidateToDraft({
       candidateId,
       actorUserId: actingUser.userId,
+      rewriteSeverity,
+      duplicateConfirmed,
+      promotedAfterEdit,
     });
 
     const warningQuery = result.warnings.length > 0 ? "?warn=1" : "";
@@ -255,6 +299,54 @@ export default async function StudioIngestionDetailPage({
                 <div className="mt-3 space-y-3">
                   <form action={promoteAction} className="space-y-2">
                     <input type="hidden" name="candidate_id" value={detail.candidate.id} />
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-medium">Promotion type</span>
+                      <select
+                        name="promoted_after_edit"
+                        className="w-full rounded border border-zinc-300 px-3 py-2"
+                        required
+                        defaultValue=""
+                      >
+                        <option value="" disabled>
+                          Select promotion type
+                        </option>
+                        <option value="false">Promoted as-is</option>
+                        <option value="true">Promoted after edit</option>
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-medium">Rewrite severity</span>
+                      <select
+                        name="rewrite_severity"
+                        className="w-full rounded border border-zinc-300 px-3 py-2"
+                        required
+                        defaultValue=""
+                      >
+                        <option value="" disabled>
+                          Select rewrite severity
+                        </option>
+                        {INGEST_REWRITE_SEVERITY_OPTIONS.map((severity) => (
+                          <option key={severity} value={severity}>
+                            {severity}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-medium">Duplicate confirmed</span>
+                      <select
+                        name="duplicate_confirmed"
+                        className="w-full rounded border border-zinc-300 px-3 py-2"
+                        required
+                        defaultValue=""
+                      >
+                        <option value="" disabled>
+                          Select duplicate confirmation
+                        </option>
+                        <option value="false">No</option>
+                        <option value="true">Yes</option>
+                      </select>
+                    </label>
                     <button
                       type="submit"
                       className="w-full rounded bg-zinc-900 px-3 py-2 text-sm text-white hover:bg-zinc-700"
@@ -265,6 +357,39 @@ export default async function StudioIngestionDetailPage({
 
                   <form action={needsWorkAction} className="space-y-2">
                     <input type="hidden" name="candidate_id" value={detail.candidate.id} />
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-medium">Rewrite severity</span>
+                      <select
+                        name="rewrite_severity"
+                        className="w-full rounded border border-zinc-300 px-3 py-2"
+                        required
+                        defaultValue=""
+                      >
+                        <option value="" disabled>
+                          Select rewrite severity
+                        </option>
+                        {INGEST_REWRITE_SEVERITY_OPTIONS.map((severity) => (
+                          <option key={severity} value={severity}>
+                            {severity}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-medium">Duplicate confirmed</span>
+                      <select
+                        name="duplicate_confirmed"
+                        className="w-full rounded border border-zinc-300 px-3 py-2"
+                        required
+                        defaultValue=""
+                      >
+                        <option value="" disabled>
+                          Select duplicate confirmation
+                        </option>
+                        <option value="false">No</option>
+                        <option value="true">Yes</option>
+                      </select>
+                    </label>
                     <label className="block">
                       <span className="mb-1 block text-xs font-medium">Needs Work note</span>
                       <textarea
@@ -283,6 +408,39 @@ export default async function StudioIngestionDetailPage({
 
                   <form action={rejectAction} className="space-y-2">
                     <input type="hidden" name="candidate_id" value={detail.candidate.id} />
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-medium">Reject reason code</span>
+                      <select
+                        name="reject_reason_code"
+                        className="w-full rounded border border-zinc-300 px-3 py-2"
+                        required
+                        defaultValue=""
+                      >
+                        <option value="" disabled>
+                          Select reject reason
+                        </option>
+                        {INGEST_REJECTION_REASON_OPTIONS.map((option) => (
+                          <option key={option.code} value={option.code}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-medium">Duplicate confirmed</span>
+                      <select
+                        name="duplicate_confirmed"
+                        className="w-full rounded border border-zinc-300 px-3 py-2"
+                        required
+                        defaultValue=""
+                      >
+                        <option value="" disabled>
+                          Select duplicate confirmation
+                        </option>
+                        <option value="false">No</option>
+                        <option value="true">Yes</option>
+                      </select>
+                    </label>
                     <label className="block">
                       <span className="mb-1 block text-xs font-medium">Reject note</span>
                       <textarea
