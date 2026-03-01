@@ -8,6 +8,8 @@ Current CLI commands:
 - `run-source <source_key>`
 - `run-source <source_key> --respect-cadence`
 - `run-source <source_key> --force`
+- `replay-run <run_id>`
+- `replay-run <run_id> --config-version <version>`
 - `source-health [source_key]`
 - `incident-alerts [source_key]`
 - `source-probe <url_or_domain>`

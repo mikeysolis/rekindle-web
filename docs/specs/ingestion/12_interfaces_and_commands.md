@@ -6,10 +6,18 @@ Current commands:
 
 1. `pipeline:list-sources`
 2. `pipeline:run-source -- <source_key>`
-3. `pipeline:source-health [source_key]`
-4. `pipeline:source-probe -- <url_or_domain>`
-5. `pipeline:reconcile-promotions`
-6. `pipeline:incident-alerts [source_key]`
+3. `pipeline:replay-run -- <run_id>`
+4. `pipeline:source-health [source_key]`
+5. `pipeline:source-probe -- <url_or_domain>`
+6. `pipeline:reconcile-promotions`
+7. `pipeline:incident-alerts [source_key]`
+
+`replay-run` reproducibility contract (ING-052):
+
+1. Defaults to original run's `source_config_version` from `ingest_runs.meta_json`.
+2. Resolves historical runtime config from `ingest_source_registry_audit_events`; falls back to current runtime when needed.
+3. Records replay context in run metadata (`meta_json.replay.*`), including override usage.
+4. Computes deterministic replay checks from candidate deltas and candidate-key overlap.
 
 `run-source` runtime guardrails (ING-050):
 
@@ -37,7 +45,6 @@ Planned commands:
 
 1. `pipeline:run-all`
 2. `pipeline:run-source -- <source_key> --mode incremental|full|replay`
-3. `pipeline:replay-run -- <run_id>`
 
 ## 2) Scheduler Interface
 

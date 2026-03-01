@@ -6,6 +6,7 @@ import {
   DurableStoreRepository,
   type IngestPage,
   type RunStatus,
+  type SourceRegistryRuntimeRecord,
 } from "../durable-store/repository.js"
 import { createSnapshotWriter } from "../durable-store/snapshot-writer.js"
 import {
@@ -41,6 +42,17 @@ import {
 export interface RunSourceOptions {
   respectCadence?: boolean
   force?: boolean
+  mode?: "standard" | "replay"
+  runtimeOverride?: SourceRegistryRuntimeRecord | null
+  replay?: {
+    originalRunId: string
+    requestedConfigVersion: string | null
+    defaultConfigVersion: string | null
+    resolvedConfigVersion: string | null
+    configResolvedFrom: "audit_event" | "current_registry" | "current_runtime"
+    overrideApplied: boolean
+    overrideReason?: string | null
+  }
 }
 
 export interface RunSourceResult {
@@ -162,12 +174,14 @@ export async function runSource(
   const durable = new DurableStoreRepository(ingestClient, logger)
   const snapshotWriter = createSnapshotWriter(config, logger, ingestClient)
 
-  const sourceRegistryRuntime = await durable.getSourceRegistryRuntime(sourceKey)
+  const sourceRegistryRuntimeCurrent = await durable.getSourceRegistryRuntime(sourceKey)
+  const sourceRegistryRuntime = options.runtimeOverride ?? sourceRegistryRuntimeCurrent
+  const mode = options.mode ?? "standard"
 
   const complianceCheckedAt = new Date().toISOString()
   const complianceDecision = evaluateSourceCompliancePreRun({
     sourceKey,
-    runtimeRecord: sourceRegistryRuntime,
+    runtimeRecord: sourceRegistryRuntimeCurrent ?? sourceRegistryRuntime,
     nowIso: complianceCheckedAt,
     robotsPolicyTtlDays: config.complianceRobotsTtlDays,
     termsPolicyTtlDays: config.complianceTermsTtlDays,
@@ -183,10 +197,10 @@ export async function runSource(
     const logMethod = complianceDecision.severity === "critical" ? logger.error : logger.warn
     logMethod("Compliance pre-run check failed", evidenceBundle)
 
-    if (sourceRegistryRuntime) {
+    if (sourceRegistryRuntimeCurrent) {
       try {
         const metadataJson = mergeComplianceAlertMetadata({
-          metadataJson: sourceRegistryRuntime.metadataJson,
+          metadataJson: sourceRegistryRuntimeCurrent.metadataJson,
           evidenceBundle,
           nowIso: complianceCheckedAt,
           failed: true,
@@ -195,7 +209,7 @@ export async function runSource(
           metadataJson,
         })
 
-        if (complianceDecision.transitionState && sourceRegistryRuntime.state === "active") {
+        if (complianceDecision.transitionState && sourceRegistryRuntimeCurrent.state === "active") {
           const reason = `ING-050 compliance pre-run check failure (${complianceDecision.reasonCodes.join(", ")})`
           await durable.setSourceLifecycleState({
             sourceKey,
@@ -206,7 +220,7 @@ export async function runSource(
 
           logger.warn("Compliance pre-run auto-transitioned source lifecycle state", {
             sourceKey,
-            from_state: sourceRegistryRuntime.state,
+            from_state: sourceRegistryRuntimeCurrent.state,
             to_state: complianceDecision.transitionState,
             reason_codes: complianceDecision.reasonCodes,
           })
@@ -241,8 +255,17 @@ export async function runSource(
       retry_backoff_multiplier: runtimePolicy.retryBackoffMultiplier,
     },
     cadence,
-    source_state: sourceRegistryRuntime?.state ?? "not_registered",
-    approved_for_prod: sourceRegistryRuntime?.approvedForProd ?? null,
+    source_state:
+      sourceRegistryRuntimeCurrent?.state ??
+      sourceRegistryRuntime?.state ??
+      "not_registered",
+    approved_for_prod:
+      sourceRegistryRuntimeCurrent?.approvedForProd ??
+      sourceRegistryRuntime?.approvedForProd ??
+      null,
+    source_config_version: sourceRegistryRuntime?.configVersion ?? null,
+    execution_mode: mode,
+    replay_context: options.replay ?? null,
   })
 
   const run = await durable.createRun(sourceKey)
@@ -278,6 +301,30 @@ export async function runSource(
   let fallbackTriggered = false
   let unprocessedPageCount = 0
 
+  const buildRunVersionsMeta = (): Record<string, unknown> => ({
+    extractor_version: extractorVersion,
+    strategy_version: STRATEGY_SELECTION_VERSION,
+    source_config_version: sourceRegistryRuntime?.configVersion ?? null,
+  })
+
+  const buildReplayMeta = (): Record<string, unknown> | null => {
+    if (!options.replay && mode !== "replay") {
+      return null
+    }
+
+    return {
+      version: "ing052_v1",
+      original_run_id: options.replay?.originalRunId ?? null,
+      requested_config_version: options.replay?.requestedConfigVersion ?? null,
+      default_config_version: options.replay?.defaultConfigVersion ?? null,
+      resolved_config_version:
+        options.replay?.resolvedConfigVersion ?? sourceRegistryRuntime?.configVersion ?? null,
+      config_resolved_from: options.replay?.configResolvedFrom ?? "current_runtime",
+      override_applied: options.replay?.overrideApplied ?? false,
+      override_reason: options.replay?.overrideReason ?? null,
+    }
+  }
+
   try {
     if (options.respectCadence && !options.force && !cadence.isDue) {
       skippedByCadence = true
@@ -288,9 +335,13 @@ export async function runSource(
       })
 
       finalRunStatus = "success"
+      const replayMeta = buildReplayMeta()
       await durable.finishRun(run.id, finalRunStatus, {
         skipped_by_cadence: true,
         cadence,
+        source_config_version: sourceRegistryRuntime?.configVersion ?? null,
+        strategy_version: STRATEGY_SELECTION_VERSION,
+        run_versions: buildRunVersionsMeta(),
         runtime_policy: {
           max_rps: runtimePolicy.maxRps,
           max_concurrency: runtimePolicy.maxConcurrency,
@@ -298,6 +349,7 @@ export async function runSource(
           retry_max_attempts: runtimePolicy.retryMaxAttempts,
         },
         snapshot_location: snapshotLocation,
+        ...(replayMeta ? { replay: replayMeta } : {}),
       })
 
       return {
@@ -601,6 +653,7 @@ export async function runSource(
       attempts: strategyAttempts,
     }
 
+    const replayMeta = buildReplayMeta()
     await durable.finishRun(run.id, finalRunStatus, {
       discovered_pages: discoveredPages,
       extracted_pages: extractedPages,
@@ -613,6 +666,9 @@ export async function runSource(
       invalid_url_pattern_count: invalidUrlPatternCount,
       source_health_status: sourceHealthStatus,
       extractor_version: extractorVersion,
+      strategy_version: STRATEGY_SELECTION_VERSION,
+      source_config_version: sourceRegistryRuntime?.configVersion ?? null,
+      run_versions: buildRunVersionsMeta(),
       strategy_selection: strategySelectionMeta,
       cadence,
       runtime_policy: {
@@ -624,6 +680,7 @@ export async function runSource(
         retry_backoff_multiplier: runtimePolicy.retryBackoffMultiplier,
       },
       snapshot_location: snapshotLocation,
+      ...(replayMeta ? { replay: replayMeta } : {}),
     })
 
     return {
@@ -663,6 +720,7 @@ export async function runSource(
       attempts: strategyAttempts,
     }
 
+    const replayMeta = buildReplayMeta()
     await durable.finishRun(run.id, finalRunStatus, {
       discovered_pages: discoveredPages,
       extracted_pages: extractedPages,
@@ -675,6 +733,9 @@ export async function runSource(
       invalid_url_pattern_count: invalidUrlPatternCount,
       source_health_status: sourceHealthStatus,
       extractor_version: extractorVersion,
+      strategy_version: STRATEGY_SELECTION_VERSION,
+      source_config_version: sourceRegistryRuntime?.configVersion ?? null,
+      run_versions: buildRunVersionsMeta(),
       strategy_selection: strategySelectionMeta,
       cadence,
       runtime_policy: {
@@ -686,11 +747,12 @@ export async function runSource(
         retry_backoff_multiplier: runtimePolicy.retryBackoffMultiplier,
       },
       error: runErrorMessage,
+      ...(replayMeta ? { replay: replayMeta } : {}),
     })
 
     throw error
   } finally {
-    if (sourceRegistryRuntime) {
+    if (sourceRegistryRuntimeCurrent) {
       try {
         const nowIso = new Date().toISOString()
         const patch = computeSourceHealthPatch({
@@ -706,10 +768,10 @@ export async function runSource(
           runError: runErrorMessage,
           policy: runtimePolicy,
           prior: {
-            lastSuccessAt: sourceRegistryRuntime.lastSuccessAt,
-            rollingPromotionRate30d: sourceRegistryRuntime.rollingPromotionRate30d,
-            rollingFailureRate30d: sourceRegistryRuntime.rollingFailureRate30d,
-            metadataJson: sourceRegistryRuntime.metadataJson,
+            lastSuccessAt: sourceRegistryRuntimeCurrent.lastSuccessAt,
+            rollingPromotionRate30d: sourceRegistryRuntimeCurrent.rollingPromotionRate30d,
+            rollingFailureRate30d: sourceRegistryRuntimeCurrent.rollingFailureRate30d,
+            metadataJson: sourceRegistryRuntimeCurrent.metadataJson,
           },
         })
 
@@ -720,8 +782,8 @@ export async function runSource(
 
         const lifecycleDecision = evaluateLifecycleAutomation({
           sourceKey,
-          state: sourceRegistryRuntime.state,
-          cadence: sourceRegistryRuntime.cadence,
+          state: sourceRegistryRuntimeCurrent.state,
+          cadence: sourceRegistryRuntimeCurrent.cadence,
           skippedByCadence,
           finalRunStatus,
           rollingFailureRate30d: patch.rollingFailureRate30d,
@@ -768,7 +830,7 @@ export async function runSource(
           }
 
           if (lifecycleDecision.shouldDowngradeCadence && lifecycleDecision.degradedCadence) {
-            const targetVersion = nextConfigVersion(sourceRegistryRuntime.configVersion, nowIso)
+            const targetVersion = nextConfigVersion(sourceRegistryRuntimeCurrent.configVersion, nowIso)
             const reason =
               lifecycleDecision.reason ??
               "Lifecycle automation downgraded cadence for degraded source"
@@ -785,7 +847,7 @@ export async function runSource(
 
             logger.warn("Lifecycle automation downgraded source cadence", {
               sourceKey,
-              previous_cadence: sourceRegistryRuntime.cadence,
+              previous_cadence: sourceRegistryRuntimeCurrent.cadence,
               new_cadence: lifecycleDecision.degradedCadence,
               config_version: targetVersion,
             })

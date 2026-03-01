@@ -108,13 +108,19 @@ where run_id = '<RUN_ID>';
 
 ### 4.3 Execute Replay
 
-Replay runs the source again using current extraction/quality logic.
+Replay by run ID. This defaults to the original run's `source_config_version` and resolves historical source runtime config from audit history.
 
 ```bash
-npm run pipeline:run-source -- <SOURCE_KEY>
+npm run pipeline:replay-run -- <RUN_ID>
 ```
 
-Save the new `runId` from command output.
+Optional override when you need to test a different source config version:
+
+```bash
+npm run pipeline:replay-run -- <RUN_ID> --config-version <CONFIG_VERSION>
+```
+
+Save the new `replayRunId` from command output.
 
 ### 4.4 Verify Replay Outcome
 

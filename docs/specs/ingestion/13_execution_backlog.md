@@ -704,9 +704,30 @@ Acceptance criteria:
 Dependencies: ING-031, ING-051
 
 Checklist:
-- [ ] Replay run by ID using historical config version.
-- [ ] Record strategy/version IDs in run metadata.
-- [ ] Validate replay determinism within accepted tolerance.
+- [x] Replay run by ID using historical config version.
+- [x] Record strategy/version IDs in run metadata.
+- [x] Validate replay determinism within accepted tolerance.
+
+Verification note:
+1. Added replay orchestration job and CLI wiring:
+   - `replayRun(runId, options)` in `pipeline/src/jobs/replay-run.ts`
+   - `pipeline:replay-run -- <run_id> [--config-version <version>]` in `pipeline/src/index.ts` and `package.json`.
+2. Replay now resolves runtime config by `source_config_version` from run metadata:
+   - defaults to original run version
+   - loads historical config from `ingest_source_registry_audit_events`
+   - falls back to current runtime config when version cannot be resolved.
+3. `run-source` now persists explicit run version metadata on every run outcome:
+   - `meta_json.run_versions.extractor_version`
+   - `meta_json.run_versions.strategy_version`
+   - `meta_json.run_versions.source_config_version`
+   - plus `meta_json.replay.*` context for replay runs and override auditing.
+4. Added determinism validation for replay:
+   - candidate/curated/quality-filtered delta checks with bounded tolerance
+   - candidate-key overlap checks
+   - failure reasons included in replay output.
+5. Added tests:
+   - `pipeline/src/jobs/replay-run.test.ts`
+   - runtime suite updated to execute replay determinism tests.
 
 Acceptance criteria:
 1. Historical runs can be replayed for forensic analysis and regression checks.

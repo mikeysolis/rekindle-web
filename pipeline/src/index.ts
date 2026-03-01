@@ -3,6 +3,7 @@ import { reconcilePromotions } from "./jobs/reconcile-promotions.js"
 import { sourceHealth } from "./jobs/source-health.js"
 import { sourceProbe } from "./jobs/source-probe.js"
 import { incidentAlerts } from "./jobs/incident-alerts.js"
+import { replayRun, type ReplayRunOptions } from "./jobs/replay-run.js"
 import { listSources } from "./sources/registry.js"
 import { loadLocalEnvFiles } from "./config/load-env.js"
 import type { SourceOnboardingApprovalAction } from "./durable-store/repository.js"
@@ -111,12 +112,55 @@ const parseSourceProbeArgs = (args: string[]): {
   }
 }
 
+const parseReplayRunArgs = (args: string[]): {
+  runId: string
+  options: ReplayRunOptions
+} => {
+  const runId = args[0]
+  if (!runId) {
+    throw new Error(
+      "Missing run ID. Usage: replay-run <run_id> [--config-version <version>] [--respect-cadence]"
+    )
+  }
+
+  const options: ReplayRunOptions = {
+    force: true,
+  }
+
+  for (let index = 1; index < args.length; index += 1) {
+    const token = args[index]
+
+    switch (token) {
+      case "--config-version": {
+        options.configVersionOverride = takeFlagValue(args, index, token)
+        index += 1
+        break
+      }
+
+      case "--respect-cadence": {
+        options.force = false
+        break
+      }
+
+      default: {
+        throw new Error(`Unknown replay-run option: ${token}`)
+      }
+    }
+  }
+
+  return {
+    runId,
+    options,
+  }
+}
+
 const help = () => {
   console.log("Rekindle content pipeline CLI")
   console.log("")
   console.log("Commands:")
   console.log("  list-sources")
   console.log("  run-source <source_key> [--respect-cadence] [--force]")
+  console.log("  replay-run <run_id> [--config-version <version>] [--respect-cadence]")
   console.log("  source-health [source_key]")
   console.log("  incident-alerts [source_key]")
   console.log(
@@ -152,6 +196,13 @@ async function main(): Promise<void> {
         respectCadence: runArgs.includes("--respect-cadence"),
         force: runArgs.includes("--force"),
       })
+      console.log(JSON.stringify(result, null, 2))
+      return
+    }
+
+    case "replay-run": {
+      const { runId, options } = parseReplayRunArgs(args)
+      const result = await replayRun(runId, options)
       console.log(JSON.stringify(result, null, 2))
       return
     }

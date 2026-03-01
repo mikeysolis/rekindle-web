@@ -24,6 +24,15 @@ export interface IngestRun {
   status: RunStatus
 }
 
+export interface IngestRunDetail {
+  id: string
+  sourceKey: string
+  status: RunStatus
+  startedAt: string | null
+  finishedAt: string | null
+  metaJson: Record<string, unknown>
+}
+
 export interface IngestPage {
   id: string
   run_id: string
@@ -69,6 +78,14 @@ export interface SourceRegistryRuntimeRecord {
   rollingPromotionRate30d: number | null
   rollingFailureRate30d: number | null
   metadataJson: Record<string, unknown>
+}
+
+export interface SourceRuntimeVersionSnapshot {
+  runtime: SourceRegistryRuntimeRecord
+  eventId: string | null
+  eventType: string | null
+  createdAt: string | null
+  resolvedFrom: "audit_event" | "current_registry"
 }
 
 export interface SourceRegistryRuntimePatch {
@@ -265,6 +282,32 @@ export class DurableStoreRepository {
     }
   }
 
+  async getRunById(runId: string): Promise<IngestRunDetail | null> {
+    const { data, error } = await this.client
+      .from("ingest_runs")
+      .select("id, source_key, status, started_at, finished_at, meta_json")
+      .eq("id", runId)
+      .maybeSingle()
+
+    if (error) {
+      throw new Error(`Failed to load ingest run (${runId}): ${error.message}`)
+    }
+
+    if (!data) {
+      return null
+    }
+
+    const row = data as Record<string, unknown>
+    return {
+      id: String(row.id ?? ""),
+      sourceKey: String(row.source_key ?? ""),
+      status: String(row.status ?? "failed") as RunStatus,
+      startedAt: typeof row.started_at === "string" ? row.started_at : null,
+      finishedAt: typeof row.finished_at === "string" ? row.finished_at : null,
+      metaJson: asRecord(row.meta_json),
+    }
+  }
+
   async getSourceRegistryRuntime(sourceKey: string): Promise<SourceRegistryRuntimeRecord | null> {
     const { data, error } = await this.client
       .from("ingest_source_registry")
@@ -285,6 +328,84 @@ export class DurableStoreRepository {
     }
 
     return toSourceRegistryRuntimeRecord(data as Record<string, unknown>)
+  }
+
+  async getSourceRuntimeByConfigVersion(
+    sourceKey: string,
+    configVersion: string
+  ): Promise<SourceRuntimeVersionSnapshot | null> {
+    const normalizedVersion = configVersion.trim()
+    if (normalizedVersion.length === 0) {
+      return null
+    }
+
+    const { data, error } = await this.client
+      .from("ingest_source_registry_audit_events")
+      .select("id, event_type, created_at, new_values")
+      .eq("source_key", sourceKey)
+      .eq("new_values->>config_version", normalizedVersion)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    const toSnapshot = (row: Record<string, unknown>): SourceRuntimeVersionSnapshot => ({
+      runtime: toSourceRegistryRuntimeRecord(asRecord(row.new_values)),
+      eventId: typeof row.id === "string" ? row.id : null,
+      eventType: typeof row.event_type === "string" ? row.event_type : null,
+      createdAt: typeof row.created_at === "string" ? row.created_at : null,
+      resolvedFrom: "audit_event",
+    })
+
+    if (data) {
+      const row = data as Record<string, unknown>
+      return toSnapshot(row)
+    }
+
+    if (error) {
+      this.logger.warn(
+        "JSON path filter lookup failed; falling back to client-side config-version resolution",
+        {
+          sourceKey,
+          configVersion: normalizedVersion,
+          error: error.message,
+        }
+      )
+
+      const fallback = await this.client
+        .from("ingest_source_registry_audit_events")
+        .select("id, event_type, created_at, new_values")
+        .eq("source_key", sourceKey)
+        .order("created_at", { ascending: false })
+        .limit(200)
+
+      if (fallback.error) {
+        throw new Error(
+          `Failed to load historical source runtime config (${sourceKey}@${normalizedVersion}): ${fallback.error.message}`
+        )
+      }
+
+      const fallbackRow = ((fallback.data ?? []) as Record<string, unknown>[]).find((row) => {
+        const configValue = asRecord(row.new_values).config_version
+        return typeof configValue === "string" && configValue.trim() === normalizedVersion
+      })
+
+      if (fallbackRow) {
+        return toSnapshot(fallbackRow)
+      }
+    }
+
+    const currentRuntime = await this.getSourceRegistryRuntime(sourceKey)
+    if (currentRuntime && currentRuntime.configVersion === normalizedVersion) {
+      return {
+        runtime: currentRuntime,
+        eventId: null,
+        eventType: null,
+        createdAt: null,
+        resolvedFrom: "current_registry",
+      }
+    }
+
+    return null
   }
 
   async updateSourceRegistryRuntime(
