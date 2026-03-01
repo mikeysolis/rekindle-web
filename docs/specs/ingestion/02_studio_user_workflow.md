@@ -128,12 +128,28 @@ These labels are mandatory inputs for tuning extraction quality.
 2. Record each tuning rollout with:
    - experiment name and hypothesis
    - status and decision (`adopt|revert|iterate`)
+   - deployment mode (`shadow|canary|full`)
    - result summary
    - source and config version
    - change JSON payload
-   - baseline/treatment metrics
+   - control/treatment sample evidence (reviewed candidates and window days)
+   - baseline/treatment metrics including guardrails:
+     - `duplicate_confirmed_rate`
+     - `safety_flag_rate`
+     - `compliance_incident_rate`
 3. Save to create linked records in:
    - `ingest_experiments`
    - `ingest_experiment_metrics`
    - `ingest_tuning_changes`
-4. Use the history table to verify every rollout has hypothesis, result, and decision traceability.
+4. Full `adopt` rollouts are blocked unless both control and treatment meet:
+   - at least 200 reviewed candidates
+   - at least 14 days of data
+   - no guardrail regressions
+5. Use the history table to verify every rollout has hypothesis, result, mode, gate verdict, and decision traceability.
+
+## 9) Tuning Rollback (Admin)
+
+1. Open `Studio > Ingestion > Experiment & Tuning History > Rollback Tuning Config`.
+2. Select source, add rollback reason, and provide rollback patch JSON.
+3. Submit rollback to execute `update_source_config` with an auto-incremented config version.
+4. Confirm success banner with new config version and check source audit history.

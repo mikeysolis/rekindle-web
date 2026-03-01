@@ -35,10 +35,17 @@ Core Studio ingestion service functions:
 4. `markIngestionCandidateNeedsWork({candidateId, actorUserId, note, rewriteSeverity, duplicateConfirmed})`
 5. `promoteIngestionCandidateToDraft({candidateId, actorUserId, rewriteSeverity, duplicateConfirmed, promotedAfterEdit})`
 6. `listIngestionLabelQualityAnalytics(windowDays)`
-7. `createIngestionTuningExperiment(input)`
+7. `createIngestionTuningExperiment(input)` with rollout gates:
+   - `deploymentMode` (`shadow|canary|full`)
+   - `sample.controlReviewedCandidates`
+   - `sample.treatmentReviewedCandidates`
+   - `sample.controlWindowDays`
+   - `sample.treatmentWindowDays`
+   - required guardrail metrics for full `adopt`: `duplicate_confirmed_rate`, `safety_flag_rate`, `compliance_incident_rate`
 8. `listIngestionExperimentRollouts(limit)`
-9. `reactivateIngestionSource({sourceKey, actorUserId, reason, productOwnerApproved, complianceAcknowledged})`
-10. `retireIngestionSource({sourceKey, actorUserId, reason, productOwnerApproved, complianceAcknowledged, archivalReference, archivalSummary})`
+9. `revertIngestionTuningConfig({sourceKey, rollbackPatchText, reason, actorUserId})`
+10. `reactivateIngestionSource({sourceKey, actorUserId, reason, productOwnerApproved, complianceAcknowledged})`
+11. `retireIngestionSource({sourceKey, actorUserId, reason, productOwnerApproved, complianceAcknowledged, archivalReference, archivalSummary})`
 
 ## 4) Suggested API Contract Shapes
 

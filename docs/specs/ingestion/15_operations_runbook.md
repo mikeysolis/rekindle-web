@@ -340,6 +340,25 @@ Recovery:
 2. replay source after tuning
 3. confirm confidence and promotion rate recovery over subsequent runs
 
+### 7.6 Tuning Rollout Guardrail Regression
+
+Detection:
+
+1. full `adopt` rollout blocked in Studio with guardrail regression message
+2. duplicate/safety/compliance guardrail metric worsens in canary
+
+Immediate mitigation:
+
+1. halt additional rollouts for the source
+2. execute Studio rollback action with last known good config patch
+
+Recovery:
+
+1. open `Studio > Ingestion > Experiment & Tuning History`
+2. run `Rollback Tuning Config` with rollback reason and patch JSON
+3. confirm new config version in success banner and source audit trail
+4. record follow-up experiment as `revert` decision if needed
+
 ## 8) Post-Incident Closure
 
 1. Record incident summary and affected run IDs.

@@ -26,6 +26,7 @@ export type IngestionEditorLabelAction =
   | "needs_work";
 export type IngestionExperimentStatus = "planned" | "running" | "completed" | "aborted";
 export type IngestionExperimentDecision = "adopt" | "revert" | "iterate";
+export type IngestionTuningDeploymentMode = "shadow" | "canary" | "full";
 
 export const INGEST_REWRITE_SEVERITY_OPTIONS: readonly IngestionRewriteSeverity[] = [
   "light",
@@ -43,6 +44,13 @@ export const INGEST_EXPERIMENT_DECISIONS: readonly IngestionExperimentDecision[]
   "revert",
   "iterate",
 ] as const;
+export const INGEST_TUNING_DEPLOYMENT_MODES: readonly IngestionTuningDeploymentMode[] = [
+  "shadow",
+  "canary",
+  "full",
+] as const;
+export const INGEST_TUNING_SAMPLE_MIN_REVIEWED = 200;
+export const INGEST_TUNING_SAMPLE_MIN_DAYS = 14;
 
 export const INGEST_REJECTION_REASON_CODES = [
   "not_actionable",
@@ -294,6 +302,23 @@ export type IngestionExperimentMetric = {
   deltaValue: number;
 };
 
+export type IngestionTuningSampleEvidence = {
+  controlReviewedCandidates: number;
+  treatmentReviewedCandidates: number;
+  controlWindowDays: number;
+  treatmentWindowDays: number;
+};
+
+export type IngestionTuningGateEvaluation = {
+  sample: IngestionTuningSampleEvidence;
+  sampleGatePassed: boolean;
+  guardrailGatePassed: boolean;
+  rolloutBlocked: boolean;
+  blockingReasons: string[];
+  regressedGuardrails: string[];
+  missingGuardrails: string[];
+};
+
 export type IngestionTuningChangeRecord = {
   sourceKey: string;
   configVersion: string;
@@ -308,10 +333,12 @@ export type IngestionExperimentRollout = {
   hypothesis: string;
   status: IngestionExperimentStatus;
   decision: IngestionExperimentDecision | null;
+  deploymentMode: IngestionTuningDeploymentMode | null;
   resultSummary: string | null;
   sourceKey: string | null;
   strategy: string | null;
   windowDays: IngestionPortfolioWindowDays | null;
+  rolloutGate: IngestionTuningGateEvaluation | null;
   startedAt: string | null;
   endedAt: string | null;
   createdAt: string | null;
@@ -324,10 +351,12 @@ export type CreateIngestionTuningExperimentInput = {
   hypothesis: string;
   status: IngestionExperimentStatus;
   decision: IngestionExperimentDecision;
+  deploymentMode: IngestionTuningDeploymentMode;
   resultSummary: string;
   sourceKey: string;
   strategy: string | null;
   windowDays: IngestionPortfolioWindowDays | null;
+  sample: IngestionTuningSampleEvidence;
   configVersion: string;
   changeJsonText: string;
   metrics: Array<{
@@ -363,6 +392,13 @@ export type RetireIngestionSourceInput = {
   complianceAcknowledged: boolean;
   archivalReference: string | null;
   archivalSummary: string | null;
+};
+
+export type RevertIngestionTuningConfigInput = {
+  sourceKey: string;
+  rollbackPatchText: string;
+  reason: string;
+  actorUserId: string;
 };
 
 export type PromoteIngestionCandidateResult = {
@@ -569,10 +605,17 @@ const EDITOR_LABEL_ACTION_SET = new Set<IngestionEditorLabelAction>([
 ]);
 const EXPERIMENT_STATUS_SET = new Set<IngestionExperimentStatus>(INGEST_EXPERIMENT_STATUSES);
 const EXPERIMENT_DECISION_SET = new Set<IngestionExperimentDecision>(INGEST_EXPERIMENT_DECISIONS);
+const DEPLOYMENT_MODE_SET = new Set<IngestionTuningDeploymentMode>(INGEST_TUNING_DEPLOYMENT_MODES);
 const REWRITE_SEVERITY_SET = new Set<IngestionRewriteSeverity>(INGEST_REWRITE_SEVERITY_OPTIONS);
 const REJECTION_REASON_SET = new Set<IngestionRejectionReasonCode>(INGEST_REJECTION_REASON_CODES);
+const TUNING_GUARDRAIL_METRIC_NAMES = [
+  "duplicate_confirmed_rate",
+  "safety_flag_rate",
+  "compliance_incident_rate",
+] as const;
 const LABEL_TREND_WINDOWS: IngestionPortfolioWindowDays[] = [7, 30, 90];
 const LIFECYCLE_WORKFLOW_VERSION = "ing033_v1";
+const TUNING_ROLLOUT_WORKFLOW_VERSION = "ing043_v1";
 
 function parseSourceLifecycleState(
   value: string | null | undefined,
@@ -631,6 +674,20 @@ function parseExperimentDecision(
 
   if (EXPERIMENT_DECISION_SET.has(value as IngestionExperimentDecision)) {
     return value as IngestionExperimentDecision;
+  }
+
+  return null;
+}
+
+function parseTuningDeploymentMode(
+  value: string | null | undefined,
+): IngestionTuningDeploymentMode | null {
+  if (!value) {
+    return null;
+  }
+
+  if (DEPLOYMENT_MODE_SET.has(value as IngestionTuningDeploymentMode)) {
+    return value as IngestionTuningDeploymentMode;
   }
 
   return null;
@@ -724,6 +781,15 @@ function normalizeExperimentDecision(value: string): IngestionExperimentDecision
   return parsed;
 }
 
+function normalizeDeploymentMode(value: string): IngestionTuningDeploymentMode {
+  const trimmed = value.trim();
+  const parsed = parseTuningDeploymentMode(trimmed);
+  if (!parsed) {
+    throw new Error("Deployment mode must be one of: shadow, canary, full.");
+  }
+  return parsed;
+}
+
 function normalizeProbabilityMetric(value: number, label: string): number {
   if (!Number.isFinite(value)) {
     throw new Error(`${label} must be a finite number.`);
@@ -732,6 +798,17 @@ function normalizeProbabilityMetric(value: number, label: string): number {
     throw new Error(`${label} must be between 0 and 1.`);
   }
   return value;
+}
+
+function normalizeNonNegativeInteger(value: number, label: string): number {
+  if (!Number.isFinite(value)) {
+    throw new Error(`${label} must be a finite integer.`);
+  }
+  const rounded = Math.round(value);
+  if (rounded < 0 || rounded !== value) {
+    throw new Error(`${label} must be a non-negative integer.`);
+  }
+  return rounded;
 }
 
 function parseChangeJson(value: string): Record<string, unknown> {
@@ -777,6 +854,31 @@ function toFiniteNumber(value: unknown): number | null {
   return null;
 }
 
+function toNonNegativeInteger(value: unknown): number | null {
+  const numeric = toFiniteNumber(value);
+  if (numeric === null) {
+    return null;
+  }
+
+  const rounded = Math.round(numeric);
+  if (rounded < 0 || numeric !== rounded) {
+    return null;
+  }
+
+  return rounded;
+}
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((entry) => typeof entry === "string")
+    .map((entry) => (entry as string).trim())
+    .filter((entry) => entry.length > 0);
+}
+
 function toObjectArray(value: unknown): Record<string, unknown>[] {
   if (!Array.isArray(value)) {
     return [];
@@ -793,6 +895,128 @@ function appendBoundedHistory(
   maxEntries = 20,
 ): Record<string, unknown>[] {
   return [...toObjectArray(existingValue), entry].slice(-maxEntries);
+}
+
+function parseRolloutGate(value: unknown): IngestionTuningGateEvaluation | null {
+  const gate = toMetaJson(value);
+  if (Object.keys(gate).length === 0) {
+    return null;
+  }
+
+  const sample: IngestionTuningSampleEvidence = {
+    controlReviewedCandidates:
+      toNonNegativeInteger(gate.control_reviewed_candidates) ?? 0,
+    treatmentReviewedCandidates:
+      toNonNegativeInteger(gate.treatment_reviewed_candidates) ?? 0,
+    controlWindowDays: toNonNegativeInteger(gate.control_window_days) ?? 0,
+    treatmentWindowDays: toNonNegativeInteger(gate.treatment_window_days) ?? 0,
+  };
+
+  const blockingReasons = toStringArray(gate.blocking_reasons);
+  const regressedGuardrails = toStringArray(gate.regressed_guardrails);
+  const missingGuardrails = toStringArray(gate.missing_guardrails);
+
+  const sampleGatePassed =
+    typeof gate.sample_gate_passed === "boolean"
+      ? gate.sample_gate_passed
+      : sample.controlReviewedCandidates >= INGEST_TUNING_SAMPLE_MIN_REVIEWED &&
+        sample.treatmentReviewedCandidates >= INGEST_TUNING_SAMPLE_MIN_REVIEWED &&
+        sample.controlWindowDays >= INGEST_TUNING_SAMPLE_MIN_DAYS &&
+        sample.treatmentWindowDays >= INGEST_TUNING_SAMPLE_MIN_DAYS;
+
+  const guardrailGatePassed =
+    typeof gate.guardrail_gate_passed === "boolean"
+      ? gate.guardrail_gate_passed
+      : regressedGuardrails.length === 0 && missingGuardrails.length === 0;
+
+  const rolloutBlocked =
+    typeof gate.rollout_blocked === "boolean"
+      ? gate.rollout_blocked
+      : blockingReasons.length > 0;
+
+  return {
+    sample,
+    sampleGatePassed,
+    guardrailGatePassed,
+    rolloutBlocked,
+    blockingReasons,
+    regressedGuardrails,
+    missingGuardrails,
+  };
+}
+
+function evaluateTuningRolloutGate(params: {
+  decision: IngestionExperimentDecision;
+  deploymentMode: IngestionTuningDeploymentMode;
+  sample: IngestionTuningSampleEvidence;
+  metrics: Array<{ metricName: string; baselineValue: number; treatmentValue: number }>;
+}): IngestionTuningGateEvaluation {
+  const sampleGatePassed =
+    params.sample.controlReviewedCandidates >= INGEST_TUNING_SAMPLE_MIN_REVIEWED &&
+    params.sample.treatmentReviewedCandidates >= INGEST_TUNING_SAMPLE_MIN_REVIEWED &&
+    params.sample.controlWindowDays >= INGEST_TUNING_SAMPLE_MIN_DAYS &&
+    params.sample.treatmentWindowDays >= INGEST_TUNING_SAMPLE_MIN_DAYS;
+
+  const metricMap = new Map<string, { baselineValue: number; treatmentValue: number }>();
+  for (const metric of params.metrics) {
+    metricMap.set(metric.metricName, {
+      baselineValue: metric.baselineValue,
+      treatmentValue: metric.treatmentValue,
+    });
+  }
+
+  const missingGuardrails: string[] = [];
+  const regressedGuardrails: string[] = [];
+  for (const metricName of TUNING_GUARDRAIL_METRIC_NAMES) {
+    const metric = metricMap.get(metricName);
+    if (!metric) {
+      missingGuardrails.push(metricName);
+      continue;
+    }
+
+    if (metric.treatmentValue > metric.baselineValue) {
+      regressedGuardrails.push(metricName);
+    }
+  }
+
+  const guardrailGatePassed = missingGuardrails.length === 0 && regressedGuardrails.length === 0;
+  const blockingReasons: string[] = [];
+
+  if (params.decision === "adopt") {
+    if (params.deploymentMode !== "full") {
+      blockingReasons.push(
+        "Adopt decision requires deployment mode \"full\" after shadow/canary validation.",
+      );
+    }
+
+    if (!sampleGatePassed) {
+      blockingReasons.push(
+        `Sample-size gate failed: control (${params.sample.controlReviewedCandidates} reviews, ${params.sample.controlWindowDays} days) and treatment (${params.sample.treatmentReviewedCandidates} reviews, ${params.sample.treatmentWindowDays} days) must each meet ${INGEST_TUNING_SAMPLE_MIN_REVIEWED} reviews and ${INGEST_TUNING_SAMPLE_MIN_DAYS} days.`,
+      );
+    }
+
+    if (missingGuardrails.length > 0) {
+      blockingReasons.push(
+        `Missing guardrail metrics: ${missingGuardrails.join(", ")}.`,
+      );
+    }
+
+    if (regressedGuardrails.length > 0) {
+      blockingReasons.push(
+        `Guardrail regression detected: ${regressedGuardrails.join(", ")}.`,
+      );
+    }
+  }
+
+  return {
+    sample: params.sample,
+    sampleGatePassed,
+    guardrailGatePassed,
+    rolloutBlocked: blockingReasons.length > 0,
+    blockingReasons,
+    regressedGuardrails,
+    missingGuardrails,
+  };
 }
 
 function normalizeRequiredReason(value: string, label: string): string {
@@ -1867,6 +2091,9 @@ export async function listIngestionExperimentRollouts(
     const decision = parseExperimentDecision(
       typeof scope.tuning_decision === "string" ? scope.tuning_decision : null,
     );
+    const deploymentMode = parseTuningDeploymentMode(
+      typeof scope.deployment_mode === "string" ? scope.deployment_mode : null,
+    );
     const resultSummary = normalizeOptionalText(
       typeof scope.result_summary === "string" ? scope.result_summary : null,
     );
@@ -1886,6 +2113,7 @@ export async function listIngestionExperimentRollouts(
     const metrics = (metricsByExperimentId.get(row.id) ?? []).sort((left, right) =>
       left.metricName.localeCompare(right.metricName),
     );
+    const rolloutGate = parseRolloutGate(scope.rollout_gate);
     const tuningChanges = (tuningByExperimentId.get(row.id) ?? []).sort((left, right) => {
       const leftAt = Date.parse(left.appliedAt ?? "");
       const rightAt = Date.parse(right.appliedAt ?? "");
@@ -1901,10 +2129,12 @@ export async function listIngestionExperimentRollouts(
       hypothesis: row.hypothesis,
       status,
       decision,
+      deploymentMode,
       resultSummary,
       sourceKey,
       strategy,
       windowDays,
+      rolloutGate,
       startedAt: row.started_at,
       endedAt: row.ended_at,
       createdAt: row.created_at,
@@ -1925,12 +2155,60 @@ export async function createIngestionTuningExperiment(
   const configVersion = normalizeRequiredReason(params.configVersion, "Config version");
   const status = normalizeExperimentStatus(params.status);
   const decision = normalizeExperimentDecision(params.decision);
+  const deploymentMode = normalizeDeploymentMode(params.deploymentMode);
   const strategy = normalizeOptionalText(params.strategy);
   const notes = normalizeOptionalText(params.notes);
   const changeJson = parseChangeJson(params.changeJsonText);
+  const sample: IngestionTuningSampleEvidence = {
+    controlReviewedCandidates: normalizeNonNegativeInteger(
+      params.sample.controlReviewedCandidates,
+      "Control reviewed candidates",
+    ),
+    treatmentReviewedCandidates: normalizeNonNegativeInteger(
+      params.sample.treatmentReviewedCandidates,
+      "Treatment reviewed candidates",
+    ),
+    controlWindowDays: normalizeNonNegativeInteger(
+      params.sample.controlWindowDays,
+      "Control window days",
+    ),
+    treatmentWindowDays: normalizeNonNegativeInteger(
+      params.sample.treatmentWindowDays,
+      "Treatment window days",
+    ),
+  };
 
   if (params.metrics.length === 0) {
     throw new Error("At least one experiment metric is required.");
+  }
+
+  const normalizedMetrics = params.metrics.map((metric) => {
+    const metricName = normalizeRequiredReason(metric.metricName, "Metric name");
+    const baselineValue = normalizeProbabilityMetric(
+      metric.baselineValue,
+      `${metricName} baseline value`,
+    );
+    const treatmentValue = normalizeProbabilityMetric(
+      metric.treatmentValue,
+      `${metricName} treatment value`,
+    );
+    return {
+      metricName,
+      baselineValue,
+      treatmentValue,
+      deltaValue: treatmentValue - baselineValue,
+    };
+  });
+
+  const rolloutGate = evaluateTuningRolloutGate({
+    decision,
+    deploymentMode,
+    sample,
+    metrics: normalizedMetrics,
+  });
+
+  if (rolloutGate.rolloutBlocked) {
+    throw new Error(`Rollout blocked: ${rolloutGate.blockingReasons.join(" ")}`);
   }
 
   const nowIso = new Date().toISOString();
@@ -1938,11 +2216,29 @@ export async function createIngestionTuningExperiment(
   const endedAt = status === "completed" || status === "aborted" ? nowIso : null;
 
   const scopeJson: Record<string, unknown> = {
+    workflow_version: TUNING_ROLLOUT_WORKFLOW_VERSION,
     source_key: sourceKey,
     strategy,
     selected_window_days: params.windowDays,
     tuning_decision: decision,
+    deployment_mode: deploymentMode,
     result_summary: resultSummary,
+    control_reviewed_candidates: sample.controlReviewedCandidates,
+    treatment_reviewed_candidates: sample.treatmentReviewedCandidates,
+    control_window_days: sample.controlWindowDays,
+    treatment_window_days: sample.treatmentWindowDays,
+    rollout_gate: {
+      sample_gate_passed: rolloutGate.sampleGatePassed,
+      guardrail_gate_passed: rolloutGate.guardrailGatePassed,
+      rollout_blocked: rolloutGate.rolloutBlocked,
+      blocking_reasons: rolloutGate.blockingReasons,
+      regressed_guardrails: rolloutGate.regressedGuardrails,
+      missing_guardrails: rolloutGate.missingGuardrails,
+      control_reviewed_candidates: sample.controlReviewedCandidates,
+      treatment_reviewed_candidates: sample.treatmentReviewedCandidates,
+      control_window_days: sample.controlWindowDays,
+      treatment_window_days: sample.treatmentWindowDays,
+    },
     notes,
     actor_user_id: params.actorUserId,
     created_from: "studio_ingestion_dashboard",
@@ -1966,24 +2262,13 @@ export async function createIngestionTuningExperiment(
   }
 
   const experimentId = String(insertedExperiment.id);
-  const metricRows = params.metrics.map((metric) => {
-    const metricName = normalizeRequiredReason(metric.metricName, "Metric name");
-    const baselineValue = normalizeProbabilityMetric(
-      metric.baselineValue,
-      `${metricName} baseline value`,
-    );
-    const treatmentValue = normalizeProbabilityMetric(
-      metric.treatmentValue,
-      `${metricName} treatment value`,
-    );
-    return {
-      experiment_id: experimentId,
-      metric_name: metricName,
-      baseline_value: baselineValue,
-      treatment_value: treatmentValue,
-      delta_value: treatmentValue - baselineValue,
-    };
-  });
+  const metricRows = normalizedMetrics.map((metric) => ({
+    experiment_id: experimentId,
+    metric_name: metric.metricName,
+    baseline_value: metric.baselineValue,
+    treatment_value: metric.treatmentValue,
+    delta_value: metric.deltaValue,
+  }));
 
   try {
     const { error: metricError } = await ingest.from("ingest_experiment_metrics").insert(metricRows);
@@ -1999,6 +2284,16 @@ export async function createIngestionTuningExperiment(
         ...changeJson,
         experiment_decision: decision,
         experiment_status: status,
+        deployment_mode: deploymentMode,
+        workflow_version: TUNING_ROLLOUT_WORKFLOW_VERSION,
+        rollout_gate: {
+          sample_gate_passed: rolloutGate.sampleGatePassed,
+          guardrail_gate_passed: rolloutGate.guardrailGatePassed,
+          rollout_blocked: rolloutGate.rolloutBlocked,
+          blocking_reasons: rolloutGate.blockingReasons,
+          regressed_guardrails: rolloutGate.regressedGuardrails,
+          missing_guardrails: rolloutGate.missingGuardrails,
+        },
         result_summary: resultSummary,
       },
       approved_by: params.actorUserId,
@@ -2073,6 +2368,68 @@ async function readSourceLifecycleRow(sourceKey: string): Promise<RawSourceLifec
   }
 
   return data as RawSourceLifecycleRow;
+}
+
+export async function revertIngestionTuningConfig(
+  params: RevertIngestionTuningConfigInput,
+): Promise<{ sourceKey: string; configVersion: string }> {
+  const sourceKey = params.sourceKey.trim();
+  if (!sourceKey) {
+    throw new Error("Source key is required.");
+  }
+
+  const reason = normalizeRequiredReason(params.reason, "Rollback reason");
+  const rollbackPatch = parseChangeJson(params.rollbackPatchText);
+  const source = await readSourceLifecycleRow(sourceKey);
+  const state = parseSourceLifecycleState(source.state);
+  if (state === "retired") {
+    throw new Error(`Source "${sourceKey}" is retired and cannot receive config rollbacks.`);
+  }
+
+  const metadata = toMetaJson(source.metadata_json);
+  const tuningMeta = toMetaJson(metadata.tuning);
+  const nowIso = new Date().toISOString();
+  const nextVersion = nextSourceConfigVersion(source.config_version, nowIso);
+  const rollbackRecord: Record<string, unknown> = {
+    workflow_version: TUNING_ROLLOUT_WORKFLOW_VERSION,
+    source_key: sourceKey,
+    previous_config_version: source.config_version,
+    rollback_config_version: nextVersion,
+    actor_user_id: params.actorUserId,
+    reason,
+    decided_at: nowIso,
+  };
+
+  const inputPatchMetadata = toMetaJson(rollbackPatch.metadata_json);
+  const patch = {
+    ...rollbackPatch,
+    metadata_json: {
+      ...inputPatchMetadata,
+      tuning: {
+        ...tuningMeta,
+        last_rollback: rollbackRecord,
+        rollback_history: appendBoundedHistory(tuningMeta.rollback_history, rollbackRecord),
+      },
+    },
+  };
+
+  const ingest = createIngestionServiceRoleClient();
+  const { error } = await ingest.rpc("update_source_config", {
+    p_source_key: sourceKey,
+    p_patch: patch,
+    p_config_version: nextVersion,
+    p_actor_user_id: params.actorUserId,
+    p_reason: `ING-043 tuning rollback: ${reason}`,
+  });
+
+  if (error) {
+    throw new Error(`Failed to apply tuning rollback for source ${sourceKey}: ${error.message}`);
+  }
+
+  return {
+    sourceKey,
+    configVersion: nextVersion,
+  };
 }
 
 export async function reactivateIngestionSource(params: ReactivateIngestionSourceInput): Promise<void> {

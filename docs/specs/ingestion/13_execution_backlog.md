@@ -599,11 +599,33 @@ Acceptance criteria:
 Dependencies: ING-042
 
 Checklist:
-- [ ] Add canary/shadow execution mode.
-- [ ] Enforce sample-size gate:
+- [x] Add canary/shadow execution mode.
+- [x] Enforce sample-size gate:
   - control and treatment each >= 200 reviewed candidates
   - or >= 14 days, whichever is longer
-- [ ] Block rollout if guardrail metrics regress.
+- [x] Block rollout if guardrail metrics regress.
+
+Verification note:
+1. Added rollout mode + sample gate + guardrail gate wiring in Studio ingestion service:
+   - `IngestionTuningDeploymentMode` (`shadow|canary|full`)
+   - sample evidence fields and gate evaluation persistence in `scope_json.rollout_gate`
+   - full `adopt` rollouts blocked on gate failures in `createIngestionTuningExperiment(...)`
+   (`lib/studio/ingestion.ts`).
+2. Added ingestion DB trigger guardrails:
+   - `ingest_tuning_rollout_guardrails()` validates deployment mode
+   - enforces sample-size thresholds for `adopt`
+   - blocks `adopt` when `duplicate_confirmed_rate`, `safety_flag_rate`, or
+     `compliance_incident_rate` regress
+   (`ingestion/supabase/migrations/0006_ingestion_tuning_rollout_guardrails.sql`).
+3. Updated Studio ingestion UI:
+   - rollout mode selector, sample evidence fields, guardrail metric inputs
+   - gate visibility in experiment history
+   - admin rollback form executing `revertIngestionTuningConfig(...)`
+   (`app/(studio)/studio/ingestion/page.tsx`).
+4. Documented rollback operations/workflow:
+   - `docs/specs/ingestion/02_studio_user_workflow.md`
+   - `docs/specs/ingestion/15_operations_runbook.md`
+   - `docs/specs/ingestion/12_interfaces_and_commands.md`.
 
 Acceptance criteria:
 1. Tuning changes cannot bypass sample-size and guardrail checks.

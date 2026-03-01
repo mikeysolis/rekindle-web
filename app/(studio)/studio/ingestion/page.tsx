@@ -10,17 +10,22 @@ import {
   INGEST_CANDIDATE_STATUSES,
   INGEST_EXPERIMENT_DECISIONS,
   INGEST_EXPERIMENT_STATUSES,
+  INGEST_TUNING_DEPLOYMENT_MODES,
+  INGEST_TUNING_SAMPLE_MIN_DAYS,
+  INGEST_TUNING_SAMPLE_MIN_REVIEWED,
   type IngestionConfidenceFilter,
   type IngestionDuplicateRiskFilter,
   type IngestionExperimentDecision,
   type IngestionExperimentStatus,
   type IngestionPortfolioWindowDays,
+  type IngestionTuningDeploymentMode,
   listIngestionCandidates,
   listIngestionExperimentRollouts,
   listIngestionLabelQualityAnalytics,
   listIngestionSourcePortfolioMetrics,
   listIngestionSourceKeys,
   reactivateIngestionSource,
+  revertIngestionTuningConfig,
   retireIngestionSource,
   type IngestCandidateStatus,
 } from "@/lib/studio/ingestion";
@@ -40,6 +45,8 @@ type IngestionPageProps = {
     sourceError?: string;
     experimentSaved?: string;
     experimentError?: string;
+    rollbackSaved?: string;
+    rollbackError?: string;
   }>;
 };
 
@@ -83,6 +90,12 @@ const EXPERIMENT_STATUS_OPTIONS: Array<{ label: string; value: IngestionExperime
 
 const EXPERIMENT_DECISION_OPTIONS: Array<{ label: string; value: IngestionExperimentDecision }> =
   INGEST_EXPERIMENT_DECISIONS.map((value) => ({
+    value,
+    label: value.charAt(0).toUpperCase() + value.slice(1),
+  }));
+
+const DEPLOYMENT_MODE_OPTIONS: Array<{ label: string; value: IngestionTuningDeploymentMode }> =
+  INGEST_TUNING_DEPLOYMENT_MODES.map((value) => ({
     value,
     label: value.charAt(0).toUpperCase() + value.slice(1),
   }));
@@ -176,6 +189,15 @@ function readRatio(formData: FormData, key: string): number {
   return value;
 }
 
+function readWholeNumber(formData: FormData, key: string): number {
+  const raw = String(formData.get(key) ?? "").trim();
+  const value = Number.parseInt(raw, 10);
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(`${key} must be a non-negative integer.`);
+  }
+  return value;
+}
+
 export default async function StudioIngestionPage({ searchParams }: IngestionPageProps) {
   const studioUser = await requireStudioUser("viewer");
   const params = (await searchParams) ?? {};
@@ -197,6 +219,8 @@ export default async function StudioIngestionPage({ searchParams }: IngestionPag
   const sourceError = (params.sourceError ?? "").trim();
   const experimentSaved = (params.experimentSaved ?? "").trim();
   const experimentError = (params.experimentError ?? "").trim();
+  const rollbackSaved = (params.rollbackSaved ?? "").trim();
+  const rollbackError = (params.rollbackError ?? "").trim();
 
   const [candidates, sourceKeys, sourcePortfolio, labelQualityAnalytics, experimentRollouts] =
     await Promise.all([
@@ -347,6 +371,7 @@ export default async function StudioIngestionPage({ searchParams }: IngestionPag
       const hypothesis = readRequiredText(formData, "hypothesis");
       const status = readRequiredText(formData, "status");
       const decision = readRequiredText(formData, "decision");
+      const deploymentMode = readRequiredText(formData, "deployment_mode");
       const resultSummary = readRequiredText(formData, "result_summary");
       const sourceKey = readRequiredText(formData, "source_key");
       const configVersion = readRequiredText(formData, "config_version");
@@ -377,17 +402,36 @@ export default async function StudioIngestionPage({ searchParams }: IngestionPag
           baselineValue: readRatio(formData, "duplicate_confirmed_rate_baseline"),
           treatmentValue: readRatio(formData, "duplicate_confirmed_rate_treatment"),
         },
+        {
+          metricName: "safety_flag_rate",
+          baselineValue: readRatio(formData, "safety_flag_rate_baseline"),
+          treatmentValue: readRatio(formData, "safety_flag_rate_treatment"),
+        },
+        {
+          metricName: "compliance_incident_rate",
+          baselineValue: readRatio(formData, "compliance_incident_rate_baseline"),
+          treatmentValue: readRatio(formData, "compliance_incident_rate_treatment"),
+        },
       ];
+
+      const sample = {
+        controlReviewedCandidates: readWholeNumber(formData, "control_reviewed_candidates"),
+        treatmentReviewedCandidates: readWholeNumber(formData, "treatment_reviewed_candidates"),
+        controlWindowDays: readWholeNumber(formData, "control_window_days"),
+        treatmentWindowDays: readWholeNumber(formData, "treatment_window_days"),
+      };
 
       const result = await createIngestionTuningExperiment({
         name,
         hypothesis,
         status: status as IngestionExperimentStatus,
         decision: decision as IngestionExperimentDecision,
+        deploymentMode: deploymentMode as IngestionTuningDeploymentMode,
         resultSummary,
         sourceKey,
         strategy,
         windowDays,
+        sample,
         configVersion,
         changeJsonText,
         metrics,
@@ -406,6 +450,38 @@ export default async function StudioIngestionPage({ searchParams }: IngestionPag
       const message = error instanceof Error ? error.message : String(error);
       const queryParams = new URLSearchParams(baseQueryEntries);
       queryParams.set("experimentError", message);
+      const queryString = queryParams.toString();
+      redirect(queryString.length > 0 ? `/studio/ingestion?${queryString}` : "/studio/ingestion");
+    }
+  }
+
+  async function rollbackTuningConfigAction(formData: FormData) {
+    "use server";
+
+    const actingUser = await requireStudioUser("admin");
+    const sourceKey = readRequiredText(formData, "rollback_source_key");
+    const rollbackReason = readRequiredText(formData, "rollback_reason");
+    const rollbackPatchText = readRequiredText(formData, "rollback_patch_json");
+
+    try {
+      const result = await revertIngestionTuningConfig({
+        sourceKey,
+        reason: rollbackReason,
+        rollbackPatchText,
+        actorUserId: actingUser.userId,
+      });
+
+      const queryParams = new URLSearchParams(baseQueryEntries);
+      queryParams.set(
+        "rollbackSaved",
+        `Rollback applied for ${result.sourceKey}. New config version: ${result.configVersion}.`,
+      );
+      const queryString = queryParams.toString();
+      redirect(queryString.length > 0 ? `/studio/ingestion?${queryString}` : "/studio/ingestion");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const queryParams = new URLSearchParams(baseQueryEntries);
+      queryParams.set("rollbackError", message);
       const queryString = queryParams.toString();
       redirect(queryString.length > 0 ? `/studio/ingestion?${queryString}` : "/studio/ingestion");
     }
@@ -867,6 +943,16 @@ export default async function StudioIngestionPage({ searchParams }: IngestionPag
                 {experimentError}
               </p>
             )}
+            {rollbackSaved && (
+              <p className="rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+                {rollbackSaved}
+              </p>
+            )}
+            {rollbackError && (
+              <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {rollbackError}
+              </p>
+            )}
 
             {!canGovernSources && (
               <p className="rounded border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-600">
@@ -875,10 +961,11 @@ export default async function StudioIngestionPage({ searchParams }: IngestionPag
             )}
 
             {canGovernSources && (
-              <form
-                action={recordTuningExperimentAction}
-                className="grid gap-3 rounded border border-zinc-200 bg-white p-3 md:grid-cols-2"
-              >
+              <>
+                <form
+                  action={recordTuningExperimentAction}
+                  className="grid gap-3 rounded border border-zinc-200 bg-white p-3 md:grid-cols-2"
+                >
                 <label className="text-sm">
                   <span className="mb-1 block font-medium">Experiment name</span>
                   <input
@@ -922,6 +1009,21 @@ export default async function StudioIngestionPage({ searchParams }: IngestionPag
                     required
                   >
                     {EXPERIMENT_DECISION_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block font-medium">Deployment mode</span>
+                  <select
+                    name="deployment_mode"
+                    className="w-full rounded border border-zinc-300 px-3 py-2"
+                    defaultValue="canary"
+                    required
+                  >
+                    {DEPLOYMENT_MODE_OPTIONS.map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
                       </option>
@@ -994,6 +1096,62 @@ export default async function StudioIngestionPage({ searchParams }: IngestionPag
                     name="notes"
                     className="w-full rounded border border-zinc-300 px-3 py-2"
                     placeholder="Operator notes"
+                  />
+                </label>
+                <div className="rounded border border-zinc-200 bg-zinc-50 p-3 text-xs text-zinc-600 md:col-span-2">
+                  <p className="font-medium text-zinc-700">Rollout gate requirements</p>
+                  <p>
+                    Full adopt rollouts require at least {INGEST_TUNING_SAMPLE_MIN_REVIEWED} reviewed
+                    candidates and {INGEST_TUNING_SAMPLE_MIN_DAYS} days of data in both control and
+                    treatment, plus no guardrail regressions.
+                  </p>
+                </div>
+                <label className="text-sm">
+                  <span className="mb-1 block font-medium">Control reviewed candidates</span>
+                  <input
+                    name="control_reviewed_candidates"
+                    type="number"
+                    step="1"
+                    min="0"
+                    defaultValue="0"
+                    className="w-full rounded border border-zinc-300 px-3 py-2"
+                    required
+                  />
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block font-medium">Treatment reviewed candidates</span>
+                  <input
+                    name="treatment_reviewed_candidates"
+                    type="number"
+                    step="1"
+                    min="0"
+                    defaultValue="0"
+                    className="w-full rounded border border-zinc-300 px-3 py-2"
+                    required
+                  />
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block font-medium">Control window (days)</span>
+                  <input
+                    name="control_window_days"
+                    type="number"
+                    step="1"
+                    min="0"
+                    defaultValue="0"
+                    className="w-full rounded border border-zinc-300 px-3 py-2"
+                    required
+                  />
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block font-medium">Treatment window (days)</span>
+                  <input
+                    name="treatment_window_days"
+                    type="number"
+                    step="1"
+                    min="0"
+                    defaultValue="0"
+                    className="w-full rounded border border-zinc-300 px-3 py-2"
+                    required
                   />
                 </label>
                 <label className="text-sm md:col-span-2">
@@ -1108,6 +1266,58 @@ export default async function StudioIngestionPage({ searchParams }: IngestionPag
                         required
                       />
                     </label>
+                    <label className="text-sm">
+                      <span className="mb-1 block font-medium">Safety flag baseline</span>
+                      <input
+                        name="safety_flag_rate_baseline"
+                        type="number"
+                        step="0.0001"
+                        min="0"
+                        max="1"
+                        defaultValue="0"
+                        className="w-full rounded border border-zinc-300 px-3 py-2"
+                        required
+                      />
+                    </label>
+                    <label className="text-sm">
+                      <span className="mb-1 block font-medium">Safety flag treatment</span>
+                      <input
+                        name="safety_flag_rate_treatment"
+                        type="number"
+                        step="0.0001"
+                        min="0"
+                        max="1"
+                        defaultValue="0"
+                        className="w-full rounded border border-zinc-300 px-3 py-2"
+                        required
+                      />
+                    </label>
+                    <label className="text-sm">
+                      <span className="mb-1 block font-medium">Compliance incident baseline</span>
+                      <input
+                        name="compliance_incident_rate_baseline"
+                        type="number"
+                        step="0.0001"
+                        min="0"
+                        max="1"
+                        defaultValue="0"
+                        className="w-full rounded border border-zinc-300 px-3 py-2"
+                        required
+                      />
+                    </label>
+                    <label className="text-sm">
+                      <span className="mb-1 block font-medium">Compliance incident treatment</span>
+                      <input
+                        name="compliance_incident_rate_treatment"
+                        type="number"
+                        step="0.0001"
+                        min="0"
+                        max="1"
+                        defaultValue="0"
+                        className="w-full rounded border border-zinc-300 px-3 py-2"
+                        required
+                      />
+                    </label>
                   </div>
                 </div>
 
@@ -1119,7 +1329,66 @@ export default async function StudioIngestionPage({ searchParams }: IngestionPag
                     Record Tuning Experiment
                   </button>
                 </div>
-              </form>
+                </form>
+
+                <form
+                  action={rollbackTuningConfigAction}
+                  className="grid gap-3 rounded border border-zinc-200 bg-white p-3 md:grid-cols-2"
+                >
+                  <div className="md:col-span-2">
+                    <h5 className="text-sm font-medium">Rollback Tuning Config</h5>
+                    <p className="text-xs text-zinc-600">
+                      Applies a rollback patch through <code>update_source_config</code> and bumps
+                      source config version automatically.
+                    </p>
+                  </div>
+                  <label className="text-sm">
+                    <span className="mb-1 block font-medium">Source</span>
+                    <select
+                      name="rollback_source_key"
+                      className="w-full rounded border border-zinc-300 px-3 py-2"
+                      defaultValue={source || ""}
+                      required
+                    >
+                      <option value="" disabled>
+                        Select source
+                      </option>
+                      {sourcePortfolio.rows.map((row) => (
+                        <option key={`rollback-${row.sourceKey}`} value={row.sourceKey}>
+                          {row.displayName} ({row.sourceKey})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-sm">
+                    <span className="mb-1 block font-medium">Rollback reason</span>
+                    <input
+                      name="rollback_reason"
+                      className="w-full rounded border border-zinc-300 px-3 py-2"
+                      placeholder="Guardrail regression after canary"
+                      required
+                    />
+                  </label>
+                  <label className="text-sm md:col-span-2">
+                    <span className="mb-1 block font-medium">Rollback patch JSON</span>
+                    <textarea
+                      name="rollback_patch_json"
+                      rows={4}
+                      className="w-full rounded border border-zinc-300 px-3 py-2 font-mono text-xs"
+                      defaultValue={`{"quality_threshold":0.55,"selector_profile_version":"rak_v1"}`}
+                      required
+                    />
+                  </label>
+                  <div className="md:col-span-2">
+                    <button
+                      type="submit"
+                      className="rounded border border-red-300 px-4 py-2 text-sm text-red-700 hover:border-red-600"
+                    >
+                      Apply Rollback
+                    </button>
+                  </div>
+                </form>
+              </>
             )}
 
             <div className="overflow-x-auto rounded border border-zinc-200 bg-white">
@@ -1152,7 +1421,32 @@ export default async function StudioIngestionPage({ searchParams }: IngestionPag
                       <td className="border-b border-zinc-100 px-3 py-2 align-top">
                         <p>{row.status}</p>
                         <p className="text-xs text-zinc-600">decision: {row.decision ?? "-"}</p>
+                        <p className="text-xs text-zinc-600">mode: {row.deploymentMode ?? "-"}</p>
                         <p className="text-xs text-zinc-600">window: {row.windowDays ?? "-"}</p>
+                        {row.rolloutGate && (
+                          <>
+                            <p className="text-xs text-zinc-600">
+                              gate:{" "}
+                              {row.rolloutGate.rolloutBlocked
+                                ? "blocked"
+                                : row.rolloutGate.sampleGatePassed &&
+                                    row.rolloutGate.guardrailGatePassed
+                                  ? "passed"
+                                  : "n/a"}
+                            </p>
+                            <p className="text-xs text-zinc-500">
+                              sample {row.rolloutGate.sample.controlReviewedCandidates}/
+                              {row.rolloutGate.sample.treatmentReviewedCandidates} reviews,{" "}
+                              {row.rolloutGate.sample.controlWindowDays}/
+                              {row.rolloutGate.sample.treatmentWindowDays} days
+                            </p>
+                            {row.rolloutGate.blockingReasons.length > 0 && (
+                              <p className="text-xs text-red-700">
+                                {row.rolloutGate.blockingReasons.join(" ")}
+                              </p>
+                            )}
+                          </>
+                        )}
                         {row.resultSummary && (
                           <p className="mt-1 text-xs text-zinc-600">{row.resultSummary}</p>
                         )}
