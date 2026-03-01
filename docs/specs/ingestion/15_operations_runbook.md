@@ -9,6 +9,7 @@ Define repeatable, low-risk procedures for:
 2. truncating ingestion tables safely
 3. handling common ingestion incidents
 4. performing guarded full resets only when necessary
+5. executing quarterly ingestion governance reviews
 
 ## 2) Safety Rules
 
@@ -388,3 +389,40 @@ Recovery:
 2. Record commands executed and outcomes.
 3. Link code/doc changes made during recovery.
 4. Add follow-up tasks to ingestion backlog if a contract gap was found.
+
+## 9) Quarterly Governance Review Operation
+
+Use this flow once per quarter (first 10 business days) to maintain source portfolio and policy governance.
+
+### 9.1 Prepare Pre-Read Data
+
+1. Export/record Studio source portfolio views for 7/30/90 days.
+2. Capture source health evidence:
+
+```bash
+npm run pipeline:source-health
+```
+
+3. Capture incident/compliance evidence:
+
+```bash
+npm run pipeline:incident-alerts
+```
+
+4. Capture top label-quality signals (reject reasons, rewrite burden, duplicate-confirmed rate) from Studio analytics.
+
+### 9.2 Run Review and Record Decisions
+
+1. Use template in `16_quarterly_governance_review_operation.md`.
+2. Review each active source against value vs maintenance burden.
+3. For every source decision, assign:
+   - owner
+   - due date
+   - lifecycle target state (keep/degrade/pause/retire)
+4. Record policy updates and retraining actions with owners/dates.
+
+### 9.3 Publish and Follow Through
+
+1. Publish completed quarterly record within 3 business days.
+2. Copy all action items into backlog/tracker within 2 business days.
+3. Verify all decisions have at least one owner and one due date.

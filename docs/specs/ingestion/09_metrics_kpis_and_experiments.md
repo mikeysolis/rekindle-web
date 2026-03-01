@@ -84,6 +84,7 @@ Lagging:
 3. Which rejection reasons are most common?
 4. Which taxonomy areas are under-supplied?
 5. What experiments should run next quarter?
+6. Use `16_quarterly_governance_review_operation.md` for required template fields, owner assignment, and completion SLA.
 
 ## 9) Gate Target Bands (for Implementation Phases)
 

@@ -736,9 +736,24 @@ Acceptance criteria:
 Dependencies: ING-050, ING-051
 
 Checklist:
-- [ ] Create recurring governance review template.
-- [ ] Review source portfolio value vs maintenance burden.
-- [ ] Track policy updates and required retraining actions.
+- [x] Create recurring governance review template.
+- [x] Review source portfolio value vs maintenance burden.
+- [x] Track policy updates and required retraining actions.
+
+Verification note:
+1. Added dedicated quarterly governance review operation document:
+   - `docs/specs/ingestion/16_quarterly_governance_review_operation.md`
+   - defines cadence, participants, required inputs, decision framework, output contract, and completion SLA.
+2. Added recurring governance review template with required ownership/action tracking fields:
+   - source portfolio decisions (value vs burden)
+   - policy update log
+   - retraining action register
+   - next-quarter experiment planning and formal sign-off.
+3. Wired governance operation into existing docs:
+   - document map update (`docs/specs/ingestion/README.md`)
+   - governance policy cross-reference (`08_governance_safety_and_compliance.md`)
+   - metrics template cross-reference (`09_metrics_kpis_and_experiments.md`)
+   - runbook execution section with concrete command inputs (`15_operations_runbook.md`).
 
 Acceptance criteria:
 1. Governance reviews occur on schedule with documented actions and owners.

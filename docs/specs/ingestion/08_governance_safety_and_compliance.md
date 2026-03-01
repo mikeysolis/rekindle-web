@@ -102,3 +102,11 @@ Incident severity minimums:
 1. weekly: operational policy checks (source health and risk events)
 2. monthly: compliance and source registry review
 3. quarterly: policy updates and training refresh
+
+## 10) Quarterly Governance Review Operation
+
+Quarterly governance execution must follow:
+
+1. `16_quarterly_governance_review_operation.md` template and schedule contract
+2. portfolio decision framework (value vs maintenance burden)
+3. mandatory policy update log and retraining action register with owners/dates
