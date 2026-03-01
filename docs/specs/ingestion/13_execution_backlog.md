@@ -263,9 +263,23 @@ Gate A (Epic 1 exit; trailing 14 days):
 Dependencies: ING-004, ING-014
 
 Checklist:
-- [ ] Enforce `discover`, `extract`, `health_check` contract.
-- [ ] Build reusable fixture runner for source modules.
-- [ ] Add contract tests for output shape and metadata completeness.
+- [x] Enforce `discover`, `extract`, `health_check` contract.
+- [x] Build reusable fixture runner for source modules.
+- [x] Add contract tests for output shape and metadata completeness.
+
+Verification note:
+1. Source module interface now requires `healthCheck` in addition to `discover`/`extract` (`pipeline/src/core/types.ts`).
+2. Runtime contract validators added and enforced during runs:
+   - source module shape
+   - health-check result shape
+   - discovered page shape
+   - extracted candidate shape + metadata completeness (`extraction_strategy` + evidence pointer)
+   (`pipeline/src/sources/contract.ts`, `pipeline/src/jobs/run-source.ts`, `pipeline/src/sources/registry.ts`).
+3. Reusable source fixture runner added (`pipeline/src/sources/fixture-runner.ts`) and used by RAK source contract tests.
+4. Contract tests added:
+   - `pipeline/src/sources/contract.test.ts`
+   - `pipeline/src/sources/rak/source.contract.test.ts`
+   - runnable via `npm run pipeline:test:sources`
 
 Acceptance criteria:
 1. New source modules can be added using shared scaffolding and tests.

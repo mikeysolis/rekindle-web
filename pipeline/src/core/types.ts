@@ -29,9 +29,18 @@ export interface SourceModuleContext {
   defaultLocale: string
 }
 
+export type SourceHealthStatus = "ok" | "degraded" | "failed"
+
+export interface SourceHealthCheckResult {
+  status: SourceHealthStatus
+  checkedAt: string
+  diagnostics: Record<string, JsonValue>
+}
+
 export interface SourceModule {
   key: string
   displayName: string
   discover: (ctx: SourceModuleContext) => Promise<DiscoveredPage[]>
   extract: (ctx: SourceModuleContext, page: DiscoveredPage) => Promise<ExtractedCandidate[]>
+  healthCheck: (ctx: SourceModuleContext) => Promise<SourceHealthCheckResult>
 }

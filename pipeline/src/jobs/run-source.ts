@@ -4,6 +4,12 @@ import { createLogger } from "../core/logger.js"
 import type { SourceModuleContext } from "../core/types.js"
 import { DurableStoreRepository } from "../durable-store/repository.js"
 import { createSnapshotWriter } from "../durable-store/snapshot-writer.js"
+import {
+  assertDiscoveredPagesContract,
+  assertExtractedCandidatesContract,
+  assertHealthCheckResultContract,
+  assertSourceModuleContract,
+} from "../sources/contract.js"
 import { getSourceByKey } from "../sources/registry.js"
 
 export interface RunSourceResult {
@@ -24,6 +30,7 @@ export async function runSource(sourceKey: string): Promise<RunSourceResult> {
 
   const logger = createLogger(config.logLevel, `run-source:${sourceKey}`)
   const source = getSourceByKey(sourceKey)
+  assertSourceModuleContract(source)
   const ingestClient = createServiceRoleClient(
     config.ingestSupabaseUrl,
     config.ingestSupabaseServiceRoleKey
@@ -45,7 +52,25 @@ export async function runSource(sourceKey: string): Promise<RunSourceResult> {
   let qualityFilteredCandidateCount = 0
 
   try {
+    const health = await source.healthCheck(sourceContext)
+    assertHealthCheckResultContract(source, health)
+    if (health.status === "failed") {
+      throw new Error(`Source health check failed for "${sourceKey}"`)
+    }
+    if (health.status === "degraded") {
+      logger.warn("Source health check returned degraded", {
+        sourceKey,
+        health,
+      })
+    } else {
+      logger.info("Source health check passed", {
+        sourceKey,
+        health,
+      })
+    }
+
     const discovered = await source.discover(sourceContext)
+    assertDiscoveredPagesContract(source, discovered)
     const dedupedUrls = [...new Set(discovered.map((page) => page.url))]
     const pages = await durable.insertDiscoveredPages(run.id, sourceKey, dedupedUrls)
     discoveredPages = pages.length
@@ -56,6 +81,7 @@ export async function runSource(sourceKey: string): Promise<RunSourceResult> {
           sourceKey,
           url: page.url,
         })
+        assertExtractedCandidatesContract(source, candidates)
         const storedCandidates = await durable.upsertCandidates(run.id, page.id, candidates)
         await durable.markPageExtracted(page.id)
         extractedPages += 1

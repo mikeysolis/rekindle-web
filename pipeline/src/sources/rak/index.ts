@@ -1,4 +1,10 @@
-import type { DiscoveredPage, ExtractedCandidate, SourceModule, SourceModuleContext } from "../../core/types.js"
+import type {
+  DiscoveredPage,
+  ExtractedCandidate,
+  SourceHealthCheckResult,
+  SourceModule,
+  SourceModuleContext,
+} from "../../core/types.js"
 import {
   BASE_DOMAIN,
   MAX_DETAIL_CANDIDATES,
@@ -113,9 +119,29 @@ const extract = async (
   return []
 }
 
+const healthCheck = async (ctx: SourceModuleContext): Promise<SourceHealthCheckResult> => {
+  const invalidSeedUrls = SEED_URLS.filter(
+    (seedUrl) => classifyRakUrl(normalizeRakUrl(seedUrl)) !== "listing"
+  )
+
+  return {
+    status: invalidSeedUrls.length > 0 ? "degraded" : "ok",
+    checkedAt: new Date().toISOString(),
+    diagnostics: {
+      source_key: SOURCE_KEY,
+      seed_urls: SEED_URLS,
+      invalid_seed_urls: invalidSeedUrls,
+      max_discovery_fetches: MAX_DISCOVERY_FETCHES,
+      extractor_version: "rak_parser_v2",
+      default_locale: ctx.defaultLocale,
+    },
+  }
+}
+
 export const createRakSource = (): SourceModule => ({
   key: SOURCE_KEY,
   displayName: "Random Acts of Kindness",
   discover,
   extract,
+  healthCheck,
 })

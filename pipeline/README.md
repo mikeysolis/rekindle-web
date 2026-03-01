@@ -11,8 +11,15 @@ Current CLI commands:
 Source fixture tests:
 
 - `npm run pipeline:test:rak`
+- `npm run pipeline:test:sources`
 - `npm run pipeline:test:quality`
 - `npm run pipeline:test:reconcile`
+
+Source module contract:
+
+- required module methods: `discover`, `extract`, `healthCheck`
+- enforced output validation for discovered pages and extracted candidate metadata
+- reusable mock-fetch fixture runner: `pipeline/src/sources/fixture-runner.ts`
 
 Promotion reconciliation:
 

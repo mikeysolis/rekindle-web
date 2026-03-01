@@ -317,7 +317,14 @@ export const buildCandidateFromDetailPage = (
     reasonSnippet: null,
     rawExcerpt: actionLines.at(0) ?? descriptionCandidate,
     traits: [],
-    meta: { extraction_strategy: "detail_page" },
+    meta: {
+      extraction_strategy: "detail_page",
+      source_evidence: {
+        document_region: "li_or_p_action_line",
+        selector_hint: "li,p",
+      },
+      extractor_version: "rak_parser_v2",
+    },
   }
 }
 
@@ -343,7 +350,14 @@ export const extractCandidatesFromListingPage = (
       reasonSnippet: null,
       rawExcerpt: title,
       traits: [],
-      meta: { extraction_strategy: "listing_link_slug", listing_url: listingUrl },
+      meta: {
+        extraction_strategy: "listing_link_slug",
+        listing_url: listingUrl,
+        source_evidence: {
+          document_region: "anchor_href_slug",
+        },
+        extractor_version: "rak_parser_v2",
+      },
     })
 
     if (candidates.length >= MAX_DISCOVERED_URLS) {
