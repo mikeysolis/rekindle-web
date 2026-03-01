@@ -23,6 +23,14 @@ import {
   resolveSourceRuntimePolicy,
   runWithRetry,
 } from "./runtime-controls.js"
+import {
+  STRATEGY_SELECTION_VERSION,
+  filterPagesForStrategy,
+  mergeStrategyPerformanceMetadata,
+  selectStrategyPlan,
+  type IngestStrategy,
+  type StrategyExecutionAttempt,
+} from "./strategy-selection.js"
 
 export interface RunSourceOptions {
   respectCadence?: boolean
@@ -50,6 +58,22 @@ export interface RunSourceResult {
 }
 
 type FinalRunStatus = Exclude<RunStatus, "running">
+
+const asRecord = (value: unknown): Record<string, unknown> => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {}
+  }
+  return value as Record<string, unknown>
+}
+
+const readExtractorVersion = (diagnostics: unknown): string | null => {
+  const record = asRecord(diagnostics)
+  const extractorVersion = record.extractor_version
+  if (typeof extractorVersion === "string" && extractorVersion.trim().length > 0) {
+    return extractorVersion
+  }
+  return null
+}
 
 const extractPage = async (params: {
   page: IngestPage
@@ -183,6 +207,14 @@ export async function runSource(
   let droppedByInclude = 0
   let droppedByExclude = 0
   let invalidUrlPatternCount = 0
+  let extractorVersion: string | null = null
+
+  let strategyPlan: ReturnType<typeof selectStrategyPlan> | null = null
+  let strategyAttempts: StrategyExecutionAttempt[] = []
+  let primaryStrategy: IngestStrategy | null = null
+  let effectiveStrategy: IngestStrategy | null = null
+  let fallbackTriggered = false
+  let unprocessedPageCount = 0
 
   try {
     if (options.respectCadence && !options.force && !cadence.isDue) {
@@ -254,6 +286,7 @@ export async function runSource(
 
     assertHealthCheckResultContract(source, health.value)
     sourceHealthStatus = health.value.status
+    extractorVersion = readExtractorVersion(health.value.diagnostics)
 
     if (health.value.status === "failed") {
       throw new Error(`Source health check failed for "${sourceKey}"`)
@@ -309,53 +342,173 @@ export async function runSource(
     const pages = await durable.insertDiscoveredPages(run.id, sourceKey, filteredUrls.accepted)
     discoveredPages = pages.length
 
-    const queue = [...pages]
-    const workerCount = Math.min(runtimePolicy.maxConcurrency, Math.max(1, queue.length))
-
-    const workers = Array.from({ length: workerCount }, async () => {
-      while (true) {
-        const page = queue.shift()
-        if (!page) {
-          return
-        }
-
-        await operationLimiter.waitTurn()
-
-        try {
-          const extractionResult = await extractPage({
-            page,
-            source,
-            sourceKey,
-            sourceContext,
-            timeoutMs: operationTimeoutMs,
-            retryMaxAttempts: runtimePolicy.retryMaxAttempts,
-            retryBackoffMs: runtimePolicy.retryBackoffMs,
-            retryBackoffMultiplier: runtimePolicy.retryBackoffMultiplier,
-            durable,
-          })
-
-          if (extractionResult.extracted) {
-            extractedPages += 1
-            candidateCount += extractionResult.storedCount
-            curatedCandidateCount += extractionResult.curatedCount
-            qualityFilteredCandidateCount += extractionResult.qualityFilteredCount
-          }
-        } catch (error) {
-          failedPages += 1
-          const message = error instanceof Error ? error.message : String(error)
-
-          logger.warn("Page extraction failed", {
-            pageId: page.id,
-            url: page.url,
-            error: message,
-          })
-
-          await durable.markPageFailed(page.id, message)
-        }
-      }
+    strategyPlan = selectStrategyPlan({
+      sourceKey,
+      configuredOrder: sourceRegistryRuntime?.strategyOrder ?? [],
+      discoveredUrls: pages.map((page) => page.url),
+      metadataJson: sourceRegistryRuntime?.metadataJson ?? {},
+      legalRiskLevel: sourceRegistryRuntime?.legalRiskLevel ?? null,
     })
 
-    await Promise.all(workers)
+    primaryStrategy = strategyPlan.selectedPrimary
+    logger.info("Resolved strategy selection plan", {
+      sourceKey,
+      configured_order: strategyPlan.configuredOrder,
+      ranked_order: strategyPlan.rankedOrder,
+      selected_primary: strategyPlan.selectedPrimary,
+      strategy_scores: strategyPlan.scores,
+      reasoning: strategyPlan.reasoning,
+    })
+
+    const unprocessedIds = new Set(pages.map((page) => page.id))
+
+    for (let strategyIndex = 0; strategyIndex < strategyPlan.rankedOrder.length; strategyIndex += 1) {
+      const strategy = strategyPlan.rankedOrder[strategyIndex]
+      const strategyPages = filterPagesForStrategy(
+        pages.filter((page) => unprocessedIds.has(page.id)),
+        strategy
+      )
+
+      const startedAt = new Date().toISOString()
+      const startedMs = Date.now()
+
+      if (strategyPages.length === 0) {
+        if (strategyIndex > 0) {
+          fallbackTriggered = true
+        }
+
+        const priorAttemptStatus = strategyAttempts.at(-1)?.status
+        strategyAttempts.push({
+          strategy,
+          status: "no_pages",
+          pagesConsidered: 0,
+          pagesSucceeded: 0,
+          pagesFailed: 0,
+          candidateCount: 0,
+          curatedCandidateCount: 0,
+          qualityFilteredCandidateCount: 0,
+          startedAt,
+          finishedAt: startedAt,
+          durationMs: 0,
+          fallbackReason:
+            strategyIndex === 0
+              ? null
+              : priorAttemptStatus === "no_pages"
+                ? "primary_no_matching_pages"
+                : "primary_underperformed",
+        })
+        continue
+      }
+
+      if (strategyIndex > 0) {
+        fallbackTriggered = true
+      }
+
+      const queue = [...strategyPages]
+      const workerCount = Math.min(runtimePolicy.maxConcurrency, Math.max(1, queue.length))
+
+      let strategyExtractedPages = 0
+      let strategyFailedPages = 0
+      let strategyCandidateCount = 0
+      let strategyCuratedCount = 0
+      let strategyQualityFilteredCount = 0
+
+      const workers = Array.from({ length: workerCount }, async () => {
+        while (true) {
+          const page = queue.shift()
+          if (!page) {
+            return
+          }
+
+          await operationLimiter.waitTurn()
+
+          try {
+            const extractionResult = await extractPage({
+              page,
+              source,
+              sourceKey,
+              sourceContext,
+              timeoutMs: operationTimeoutMs,
+              retryMaxAttempts: runtimePolicy.retryMaxAttempts,
+              retryBackoffMs: runtimePolicy.retryBackoffMs,
+              retryBackoffMultiplier: runtimePolicy.retryBackoffMultiplier,
+              durable,
+            })
+
+            if (extractionResult.extracted) {
+              strategyExtractedPages += 1
+              strategyCandidateCount += extractionResult.storedCount
+              strategyCuratedCount += extractionResult.curatedCount
+              strategyQualityFilteredCount += extractionResult.qualityFilteredCount
+            }
+          } catch (error) {
+            strategyFailedPages += 1
+            const message = error instanceof Error ? error.message : String(error)
+
+            logger.warn("Page extraction failed", {
+              pageId: page.id,
+              url: page.url,
+              error: message,
+              strategy,
+            })
+
+            await durable.markPageFailed(page.id, message)
+          }
+        }
+      })
+
+      await Promise.all(workers)
+
+      extractedPages += strategyExtractedPages
+      failedPages += strategyFailedPages
+      candidateCount += strategyCandidateCount
+      curatedCandidateCount += strategyCuratedCount
+      qualityFilteredCandidateCount += strategyQualityFilteredCount
+
+      const finishedAt = new Date().toISOString()
+      const durationMs = Date.now() - startedMs
+
+      let status: StrategyExecutionAttempt["status"]
+      if (strategyFailedPages === strategyPages.length && strategyPages.length > 0) {
+        status = "failed"
+      } else if (strategyCandidateCount > 0 && strategyFailedPages === 0) {
+        status = "success"
+      } else if (strategyCandidateCount > 0 || strategyExtractedPages > 0) {
+        status = strategyCandidateCount > 0 ? "partial" : "no_candidates"
+      } else {
+        status = "failed"
+      }
+
+      strategyAttempts.push({
+        strategy,
+        status,
+        pagesConsidered: strategyPages.length,
+        pagesSucceeded: strategyExtractedPages,
+        pagesFailed: strategyFailedPages,
+        candidateCount: strategyCandidateCount,
+        curatedCandidateCount: strategyCuratedCount,
+        qualityFilteredCandidateCount: strategyQualityFilteredCount,
+        startedAt,
+        finishedAt,
+        durationMs,
+        fallbackReason:
+          strategyIndex === 0
+            ? null
+            : strategyAttempts.at(-1)?.status === "no_pages"
+              ? "primary_no_matching_pages"
+              : "primary_underperformed",
+      })
+
+      if (strategyCandidateCount > 0) {
+        for (const page of strategyPages) {
+          unprocessedIds.delete(page.id)
+        }
+        effectiveStrategy = strategy
+        break
+      }
+    }
+
+    unprocessedPageCount = unprocessedIds.size
 
     const runCandidates = await durable.listCandidatesByRun(run.id)
     candidateCount = runCandidates.length
@@ -372,6 +525,20 @@ export async function runSource(
 
     finalRunStatus = failedPages > 0 ? "partial" : "success"
 
+    const strategySelectionMeta = {
+      version: STRATEGY_SELECTION_VERSION,
+      source_config_version: sourceRegistryRuntime?.configVersion ?? null,
+      configured_order: strategyPlan?.configuredOrder ?? [],
+      ranked_order: strategyPlan?.rankedOrder ?? [],
+      selected_primary: primaryStrategy,
+      selected_effective: effectiveStrategy,
+      fallback_triggered: fallbackTriggered,
+      unprocessed_page_count: unprocessedPageCount,
+      reasoning: strategyPlan?.reasoning ?? [],
+      scores: strategyPlan?.scores ?? [],
+      attempts: strategyAttempts,
+    }
+
     await durable.finishRun(run.id, finalRunStatus, {
       discovered_pages: discoveredPages,
       extracted_pages: extractedPages,
@@ -383,6 +550,8 @@ export async function runSource(
       dropped_by_exclude: droppedByExclude,
       invalid_url_pattern_count: invalidUrlPatternCount,
       source_health_status: sourceHealthStatus,
+      extractor_version: extractorVersion,
+      strategy_selection: strategySelectionMeta,
       cadence,
       runtime_policy: {
         max_rps: runtimePolicy.maxRps,
@@ -418,6 +587,20 @@ export async function runSource(
     runErrorMessage = error instanceof Error ? error.message : String(error)
     finalRunStatus = "failed"
 
+    const strategySelectionMeta = {
+      version: STRATEGY_SELECTION_VERSION,
+      source_config_version: sourceRegistryRuntime?.configVersion ?? null,
+      configured_order: strategyPlan?.configuredOrder ?? [],
+      ranked_order: strategyPlan?.rankedOrder ?? [],
+      selected_primary: primaryStrategy,
+      selected_effective: effectiveStrategy,
+      fallback_triggered: fallbackTriggered,
+      unprocessed_page_count: unprocessedPageCount,
+      reasoning: strategyPlan?.reasoning ?? [],
+      scores: strategyPlan?.scores ?? [],
+      attempts: strategyAttempts,
+    }
+
     await durable.finishRun(run.id, finalRunStatus, {
       discovered_pages: discoveredPages,
       extracted_pages: extractedPages,
@@ -429,6 +612,8 @@ export async function runSource(
       dropped_by_exclude: droppedByExclude,
       invalid_url_pattern_count: invalidUrlPatternCount,
       source_health_status: sourceHealthStatus,
+      extractor_version: extractorVersion,
+      strategy_selection: strategySelectionMeta,
       cadence,
       runtime_policy: {
         max_rps: runtimePolicy.maxRps,
@@ -445,8 +630,9 @@ export async function runSource(
   } finally {
     if (sourceRegistryRuntime) {
       try {
+        const nowIso = new Date().toISOString()
         const patch = computeSourceHealthPatch({
-          nowIso: new Date().toISOString(),
+          nowIso,
           status: finalRunStatus,
           discoveredPages,
           extractedPages,
@@ -464,6 +650,11 @@ export async function runSource(
             metadataJson: sourceRegistryRuntime.metadataJson,
           },
         })
+
+        patch.metadataJson = mergeStrategyPerformanceMetadata(
+          patch.metadataJson,
+          strategyAttempts
+        )
 
         const updated = await durable.updateSourceRegistryRuntime(sourceKey, patch)
         if (!updated) {

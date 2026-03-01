@@ -53,6 +53,9 @@ export interface SourceRegistryRuntimeRecord {
   displayName: string
   state: string
   approvedForProd: boolean
+  strategyOrder: string[]
+  legalRiskLevel: string
+  configVersion: string
   cadence: string | null
   maxRps: number | null
   maxConcurrency: number | null
@@ -158,6 +161,9 @@ const toSourceRegistryRuntimeRecord = (row: Record<string, unknown>): SourceRegi
   displayName: String(row.display_name ?? ""),
   state: String(row.state ?? "proposed"),
   approvedForProd: Boolean(row.approved_for_prod),
+  strategyOrder: asStringArray(row.strategy_order),
+  legalRiskLevel: String(row.legal_risk_level ?? "medium"),
+  configVersion: String(row.config_version ?? "1"),
   cadence: typeof row.cadence === "string" ? row.cadence : null,
   maxRps: asFiniteNumber(row.max_rps),
   maxConcurrency: asFiniteNumber(row.max_concurrency),
@@ -227,7 +233,7 @@ export class DurableStoreRepository {
     const { data, error } = await this.client
       .from("ingest_source_registry")
       .select(
-        "source_key, display_name, state, approved_for_prod, cadence, max_rps, max_concurrency, timeout_seconds, include_url_patterns, exclude_url_patterns, last_run_at, last_success_at, rolling_promotion_rate_30d, rolling_failure_rate_30d, metadata_json"
+        "source_key, display_name, state, approved_for_prod, strategy_order, legal_risk_level, config_version, cadence, max_rps, max_concurrency, timeout_seconds, include_url_patterns, exclude_url_patterns, last_run_at, last_success_at, rolling_promotion_rate_30d, rolling_failure_rate_30d, metadata_json"
       )
       .eq("source_key", sourceKey)
       .maybeSingle()

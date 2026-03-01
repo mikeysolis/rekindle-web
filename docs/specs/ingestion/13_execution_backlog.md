@@ -404,9 +404,27 @@ Acceptance criteria:
 Dependencies: ING-030
 
 Checklist:
-- [ ] Select best strategy from configured order by reliability/cost/risk.
-- [ ] Fallback automatically when primary strategy fails.
-- [ ] Persist selected strategy and reason in run metadata.
+- [x] Select best strategy from configured order by reliability/cost/risk.
+- [x] Fallback automatically when primary strategy fails.
+- [x] Persist selected strategy and reason in run metadata.
+
+Verification note:
+1. Added strategy selection engine with scoring + strategy URL bucketing:
+   - `pipeline/src/jobs/strategy-selection.ts`.
+2. Added automatic fallback ladder execution in source runtime:
+   - `pipeline/src/jobs/run-source.ts`.
+3. Run metadata now persists strategy decision payload (`strategy_selection`) including:
+   - configured/ranked order
+   - selected primary/effective strategy
+   - scoring and reasoning
+   - per-strategy attempt results and fallback signals.
+4. Source registry runtime metadata now tracks rolling per-strategy performance for future selection reliability:
+   - `metadata_json.strategy_performance.*`.
+5. Added strategy selection tests:
+   - `pipeline/src/jobs/strategy-selection.test.ts`.
+6. Verified on 2026-03-01:
+   - `npm run pipeline:build`
+   - `npm run pipeline:test:runtime`.
 
 Acceptance criteria:
 1. Strategy decisions are explainable and replayable from logs.

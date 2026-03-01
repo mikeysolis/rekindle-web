@@ -41,6 +41,7 @@ Source module contract:
   - `max_rps`
   - `max_concurrency`
   - `timeout_seconds`
+  - `strategy_order` (scored + fallback ladder within approved strategies)
   - include/exclude URL patterns
   - retry budget via `metadata_json.runtime.*`
 
