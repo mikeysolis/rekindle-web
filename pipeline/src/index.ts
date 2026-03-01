@@ -1,5 +1,6 @@
 import { runSource } from "./jobs/run-source.js"
 import { reconcilePromotions } from "./jobs/reconcile-promotions.js"
+import { sourceHealth } from "./jobs/source-health.js"
 import { listSources } from "./sources/registry.js"
 import { loadLocalEnvFiles } from "./config/load-env.js"
 
@@ -8,7 +9,8 @@ const help = () => {
   console.log("")
   console.log("Commands:")
   console.log("  list-sources")
-  console.log("  run-source <source_key>")
+  console.log("  run-source <source_key> [--respect-cadence] [--force]")
+  console.log("  source-health [source_key]")
   console.log("  reconcile-promotions")
 }
 
@@ -30,9 +32,22 @@ async function main(): Promise<void> {
     case "run-source": {
       const sourceKey = args[0]
       if (!sourceKey) {
-        throw new Error("Missing source key. Usage: run-source <source_key>")
+        throw new Error(
+          "Missing source key. Usage: run-source <source_key> [--respect-cadence] [--force]"
+        )
       }
-      const result = await runSource(sourceKey)
+      const runArgs = args.slice(1)
+      const result = await runSource(sourceKey, {
+        respectCadence: runArgs.includes("--respect-cadence"),
+        force: runArgs.includes("--force"),
+      })
+      console.log(JSON.stringify(result, null, 2))
+      return
+    }
+
+    case "source-health": {
+      const sourceKey = args[0]
+      const result = await sourceHealth(sourceKey)
       console.log(JSON.stringify(result, null, 2))
       return
     }

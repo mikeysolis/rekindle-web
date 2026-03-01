@@ -7,6 +7,7 @@ This folder contains schema setup for the separate, durable ingestion Supabase p
 - `supabase/migrations/0001_ingestion_core.sql`
 - `supabase/migrations/0002_ingestion_learning_analytics.sql`
 - `supabase/migrations/0003_ingestion_source_registry.sql`
+- `supabase/migrations/0004_ingestion_source_registry_baseline_sources.sql`
 
 Apply this SQL to your dedicated ingestion project before running pipeline jobs.
 

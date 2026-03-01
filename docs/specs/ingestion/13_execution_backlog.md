@@ -314,9 +314,28 @@ Acceptance criteria:
 Dependencies: ING-020
 
 Checklist:
-- [ ] Implement cadence, rate limit, and concurrency controls by source.
-- [ ] Add per-source timeout and retry budgets.
-- [ ] Add source-level health scoring.
+- [x] Implement cadence, rate limit, and concurrency controls by source.
+- [x] Add per-source timeout and retry budgets.
+- [x] Add source-level health scoring.
+
+Verification note:
+1. `run-source` now loads runtime policy from `ingest_source_registry` and enforces:
+   - cadence window evaluation (`--respect-cadence` / `--force`)
+   - max RPS pacing across discover/extract operations
+   - bounded page extraction concurrency
+   - include/exclude URL pattern filters
+   (`pipeline/src/jobs/run-source.ts`, `pipeline/src/jobs/runtime-controls.ts`).
+2. Per-source timeout and retry budgets are enforced for health/discover/extract operations:
+   - timeout budget from `timeout_seconds`
+   - retry budget/backoff from `metadata_json.runtime.*` (with defaults)
+   (`pipeline/src/jobs/runtime-controls.ts`).
+3. Source-level health metrics are written back to source registry after each run:
+   - `last_run_at`, `last_success_at`
+   - rolling promotion/failure rates
+   - computed health metadata (`health_score`, `consecutive_failures`, last run signals)
+   (`pipeline/src/durable-store/repository.ts`, `pipeline/src/jobs/run-source.ts`).
+4. New CLI command `source-health` exposes actionable source health signals:
+   (`pipeline/src/jobs/source-health.ts`, `pipeline/src/index.ts`, `package.json`).
 
 Acceptance criteria:
 1. A failing source cannot starve or destabilize other active sources.

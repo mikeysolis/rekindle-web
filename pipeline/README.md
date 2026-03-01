@@ -6,6 +6,9 @@ Current CLI commands:
 
 - `list-sources`
 - `run-source <source_key>`
+- `run-source <source_key> --respect-cadence`
+- `run-source <source_key> --force`
+- `source-health [source_key]`
 - `reconcile-promotions`
 
 Current source keys:
@@ -21,6 +24,7 @@ Source fixture tests:
 - `npm run pipeline:test:rak`
 - `npm run pipeline:test:sources`
 - `npm run pipeline:test:quality`
+- `npm run pipeline:test:runtime`
 - `npm run pipeline:test:reconcile`
 
 Source module contract:
@@ -28,6 +32,13 @@ Source module contract:
 - required module methods: `discover`, `extract`, `healthCheck`
 - enforced output validation for discovered pages and extracted candidate metadata
 - reusable mock-fetch fixture runner: `pipeline/src/sources/fixture-runner.ts`
+- per-source runtime policy from `ingest_source_registry`:
+  - cadence (optional)
+  - `max_rps`
+  - `max_concurrency`
+  - `timeout_seconds`
+  - include/exclude URL patterns
+  - retry budget via `metadata_json.runtime.*`
 
 Promotion reconciliation:
 

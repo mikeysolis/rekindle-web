@@ -48,6 +48,45 @@ export interface StoredCandidate {
   traits: TraitHint[]
 }
 
+export interface SourceRegistryRuntimeRecord {
+  sourceKey: string
+  displayName: string
+  state: string
+  approvedForProd: boolean
+  cadence: string | null
+  maxRps: number | null
+  maxConcurrency: number | null
+  timeoutSeconds: number | null
+  includeUrlPatterns: string[]
+  excludeUrlPatterns: string[]
+  lastRunAt: string | null
+  lastSuccessAt: string | null
+  rollingPromotionRate30d: number | null
+  rollingFailureRate30d: number | null
+  metadataJson: Record<string, unknown>
+}
+
+export interface SourceRegistryRuntimePatch {
+  lastRunAt?: string | null
+  lastSuccessAt?: string | null
+  rollingPromotionRate30d?: number | null
+  rollingFailureRate30d?: number | null
+  metadataJson?: Record<string, unknown>
+}
+
+export interface SourceHealthRow {
+  sourceKey: string
+  displayName: string
+  state: string
+  approvedForProd: boolean
+  cadence: string | null
+  lastRunAt: string | null
+  lastSuccessAt: string | null
+  rollingPromotionRate30d: number | null
+  rollingFailureRate30d: number | null
+  metadataJson: Record<string, unknown>
+}
+
 type SyncStatus = "pending" | "success" | "failed"
 
 const must = <T>(value: T | null, context: string): T => {
@@ -56,6 +95,64 @@ const must = <T>(value: T | null, context: string): T => {
   }
   return value
 }
+
+const asFiniteNumber = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value
+  }
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number.parseFloat(value)
+    if (Number.isFinite(parsed)) {
+      return parsed
+    }
+  }
+
+  return null
+}
+
+const asStringArray = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return []
+  return value.filter((item): item is string => typeof item === "string")
+}
+
+const asRecord = (value: unknown): Record<string, unknown> => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {}
+  }
+  return value as Record<string, unknown>
+}
+
+const toSourceRegistryRuntimeRecord = (row: Record<string, unknown>): SourceRegistryRuntimeRecord => ({
+  sourceKey: String(row.source_key ?? ""),
+  displayName: String(row.display_name ?? ""),
+  state: String(row.state ?? "proposed"),
+  approvedForProd: Boolean(row.approved_for_prod),
+  cadence: typeof row.cadence === "string" ? row.cadence : null,
+  maxRps: asFiniteNumber(row.max_rps),
+  maxConcurrency: asFiniteNumber(row.max_concurrency),
+  timeoutSeconds: asFiniteNumber(row.timeout_seconds),
+  includeUrlPatterns: asStringArray(row.include_url_patterns),
+  excludeUrlPatterns: asStringArray(row.exclude_url_patterns),
+  lastRunAt: typeof row.last_run_at === "string" ? row.last_run_at : null,
+  lastSuccessAt: typeof row.last_success_at === "string" ? row.last_success_at : null,
+  rollingPromotionRate30d: asFiniteNumber(row.rolling_promotion_rate_30d),
+  rollingFailureRate30d: asFiniteNumber(row.rolling_failure_rate_30d),
+  metadataJson: asRecord(row.metadata_json),
+})
+
+const toSourceHealthRow = (row: Record<string, unknown>): SourceHealthRow => ({
+  sourceKey: String(row.source_key ?? ""),
+  displayName: String(row.display_name ?? ""),
+  state: String(row.state ?? "proposed"),
+  approvedForProd: Boolean(row.approved_for_prod),
+  cadence: typeof row.cadence === "string" ? row.cadence : null,
+  lastRunAt: typeof row.last_run_at === "string" ? row.last_run_at : null,
+  lastSuccessAt: typeof row.last_success_at === "string" ? row.last_success_at : null,
+  rollingPromotionRate30d: asFiniteNumber(row.rolling_promotion_rate_30d),
+  rollingFailureRate30d: asFiniteNumber(row.rolling_failure_rate_30d),
+  metadataJson: asRecord(row.metadata_json),
+})
 
 export class DurableStoreRepository {
   constructor(
@@ -94,6 +191,90 @@ export class DurableStoreRepository {
     if (error) {
       throw new Error(`Failed to finish ingest run ${runId}: ${error.message}`)
     }
+  }
+
+  async getSourceRegistryRuntime(sourceKey: string): Promise<SourceRegistryRuntimeRecord | null> {
+    const { data, error } = await this.client
+      .from("ingest_source_registry")
+      .select(
+        "source_key, display_name, state, approved_for_prod, cadence, max_rps, max_concurrency, timeout_seconds, include_url_patterns, exclude_url_patterns, last_run_at, last_success_at, rolling_promotion_rate_30d, rolling_failure_rate_30d, metadata_json"
+      )
+      .eq("source_key", sourceKey)
+      .maybeSingle()
+
+    if (error) {
+      throw new Error(
+        `Failed to load source registry runtime config (${sourceKey}): ${error.message}`
+      )
+    }
+
+    if (!data) {
+      return null
+    }
+
+    return toSourceRegistryRuntimeRecord(data as Record<string, unknown>)
+  }
+
+  async updateSourceRegistryRuntime(
+    sourceKey: string,
+    patch: SourceRegistryRuntimePatch
+  ): Promise<boolean> {
+    const payload: Record<string, unknown> = {}
+
+    if ("lastRunAt" in patch) {
+      payload.last_run_at = patch.lastRunAt ?? null
+    }
+    if ("lastSuccessAt" in patch) {
+      payload.last_success_at = patch.lastSuccessAt ?? null
+    }
+    if ("rollingPromotionRate30d" in patch) {
+      payload.rolling_promotion_rate_30d = patch.rollingPromotionRate30d ?? null
+    }
+    if ("rollingFailureRate30d" in patch) {
+      payload.rolling_failure_rate_30d = patch.rollingFailureRate30d ?? null
+    }
+    if ("metadataJson" in patch) {
+      payload.metadata_json = patch.metadataJson ?? {}
+    }
+
+    if (Object.keys(payload).length === 0) {
+      return false
+    }
+
+    const { data, error } = await this.client
+      .from("ingest_source_registry")
+      .update(payload)
+      .eq("source_key", sourceKey)
+      .select("source_key")
+      .maybeSingle()
+
+    if (error) {
+      throw new Error(`Failed to update source registry runtime (${sourceKey}): ${error.message}`)
+    }
+
+    return Boolean(data)
+  }
+
+  async listSourceHealthRows(sourceKeys?: string[]): Promise<SourceHealthRow[]> {
+    const columns =
+      "source_key, display_name, state, approved_for_prod, cadence, last_run_at, last_success_at, rolling_promotion_rate_30d, rolling_failure_rate_30d, metadata_json"
+
+    const normalizedKeys = sourceKeys?.filter((key) => key.trim().length > 0) ?? []
+    let query = this.client
+      .from("ingest_source_registry")
+      .select(columns)
+      .order("source_key", { ascending: true })
+
+    if (normalizedKeys.length > 0) {
+      query = query.in("source_key", normalizedKeys)
+    }
+
+    const { data, error } = await query
+    if (error) {
+      throw new Error(`Failed to list source health rows: ${error.message}`)
+    }
+
+    return ((data ?? []) as Record<string, unknown>[]).map(toSourceHealthRow)
   }
 
   async insertDiscoveredPages(runId: string, sourceKey: string, urls: string[]): Promise<IngestPage[]> {
