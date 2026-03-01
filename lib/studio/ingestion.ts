@@ -91,6 +91,50 @@ export type IngestionListFilters = {
   limit?: number;
 };
 
+export type IngestionPortfolioWindowDays = 7 | 30 | 90;
+
+export type IngestionSourcePortfolioRow = {
+  sourceKey: string;
+  displayName: string;
+  state: string;
+  approvedForProd: boolean;
+  inboxedCandidates: number;
+  reviewedCandidates: number;
+  acceptedIdeas: number;
+  acceptedIdeasLast7d: number;
+  precisionProxy: number | null;
+  freshnessContribution: number | null;
+  diversityUnits: number;
+  diversityContribution: number | null;
+  diversityMethod: "traits" | "title_uniques";
+  runCount: number;
+  partialRuns: number;
+  failedRuns: number;
+  maintenanceFailureRate: number | null;
+  failedPages: number;
+  lastCandidateAt: string | null;
+  lastAcceptedAt: string | null;
+};
+
+export type IngestionSourcePortfolioSummary = {
+  generatedAt: string;
+  windowDays: IngestionPortfolioWindowDays;
+  windowStartAt: string;
+  totalSources: number;
+  activeSources: number;
+  totalInboxedCandidates: number;
+  totalReviewedCandidates: number;
+  totalAcceptedIdeas: number;
+  totalAcceptedIdeasLast7d: number;
+  diversityMethod: "traits" | "title_uniques";
+  totalDiversityUnits: number;
+};
+
+export type IngestionSourcePortfolioMetrics = {
+  summary: IngestionSourcePortfolioSummary;
+  rows: IngestionSourcePortfolioRow[];
+};
+
 export type PromoteIngestionCandidateResult = {
   draftId: string;
   created: boolean;
@@ -149,6 +193,35 @@ type RawDuplicateSyncRow = {
   synced_at: string | null;
 };
 
+type RawSourceRegistryPortfolioRow = {
+  source_key: string;
+  display_name: string;
+  state: string;
+  approved_for_prod: boolean;
+};
+
+type RawPortfolioCandidateActivityRow = {
+  id: string;
+  source_key: string;
+  title: string;
+  status: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+type RawPortfolioRunRow = {
+  source_key: string;
+  status: string | null;
+  meta_json: unknown;
+  started_at: string | null;
+};
+
+type RawPortfolioTraitRow = {
+  candidate_id: string;
+  trait_type_slug: string;
+  trait_option_slug: string;
+};
+
 function parseCandidateStatus(value: string | null): IngestCandidateStatus {
   if (!value) {
     return "new";
@@ -174,6 +247,105 @@ function toMetaJson(value: unknown): Record<string, unknown> {
   }
 
   return { ...(value as Record<string, unknown>) };
+}
+
+function toFiniteNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number.parseFloat(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
+function parseFailedPagesFromRunMeta(value: unknown): number {
+  const meta = toMetaJson(value);
+  const failedPages = toFiniteNumber(meta.failed_pages);
+  if (failedPages === null) {
+    return 0;
+  }
+
+  return Math.max(0, Math.round(failedPages));
+}
+
+function normalizeTitleSignature(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function maxIsoDatetime(left: string | null, right: string | null): string | null {
+  if (!left) return right;
+  if (!right) return left;
+
+  const leftMs = Date.parse(left);
+  const rightMs = Date.parse(right);
+  if (!Number.isFinite(leftMs) || !Number.isFinite(rightMs)) {
+    return left;
+  }
+
+  return rightMs > leftMs ? right : left;
+}
+
+function coercePortfolioWindowDays(value: number): IngestionPortfolioWindowDays {
+  if (value <= 7) {
+    return 7;
+  }
+
+  if (value <= 30) {
+    return 30;
+  }
+
+  return 90;
+}
+
+async function readPagedRows<T>(params: {
+  label: string;
+  fetchPage: (from: number, to: number) => Promise<{
+    data: T[] | null;
+    error: { message: string } | null;
+  }>;
+  batchSize?: number;
+}): Promise<T[]> {
+  const batchSize = params.batchSize ?? 1000;
+  const output: T[] = [];
+  let from = 0;
+
+  while (true) {
+    const to = from + batchSize - 1;
+    const { data, error } = await params.fetchPage(from, to);
+
+    if (error) {
+      throw new Error(`Failed to load ${params.label}: ${error.message}`);
+    }
+
+    const rows = (data ?? []) as T[];
+    output.push(...rows);
+
+    if (rows.length < batchSize) {
+      break;
+    }
+
+    from += batchSize;
+  }
+
+  return output;
+}
+
+function chunkArray<T>(items: T[], chunkSize: number): T[][] {
+  if (items.length === 0) {
+    return [];
+  }
+
+  const output: T[][] = [];
+  for (let index = 0; index < items.length; index += chunkSize) {
+    output.push(items.slice(index, index + chunkSize));
+  }
+  return output;
 }
 
 function readQualityMeta(metaJson: Record<string, unknown>): {
@@ -388,19 +560,364 @@ function computeDuplicateHints(params: {
   return scored.sort((left, right) => right.similarityScore - left.similarityScore).slice(0, 5);
 }
 
-export async function listIngestionSourceKeys(): Promise<string[]> {
-  const ingest = createIngestionServiceRoleClient();
-  const { data, error } = await ingest
-    .from("ingest_candidates")
-    .select("source_key")
-    .order("source_key", { ascending: true });
+const REVIEWED_PORTFOLIO_STATUSES: IngestCandidateStatus[] = [
+  "rejected",
+  "pushed_to_studio",
+  "exported",
+];
 
-  if (error) {
-    throw new Error(`Failed to list ingestion source keys: ${error.message}`);
+const ACCEPTED_PORTFOLIO_STATUS_SET = new Set<IngestCandidateStatus>([
+  "pushed_to_studio",
+  "exported",
+]);
+
+type WorkingSourcePortfolioRow = {
+  sourceKey: string;
+  displayName: string;
+  state: string;
+  approvedForProd: boolean;
+  inboxedCandidates: number;
+  reviewedCandidates: number;
+  acceptedIdeas: number;
+  acceptedIdeasLast7d: number;
+  runCount: number;
+  partialRuns: number;
+  failedRuns: number;
+  failedPages: number;
+  lastCandidateAt: string | null;
+  lastAcceptedAt: string | null;
+  acceptedCandidateIds: Set<string>;
+  acceptedTitleSignatures: Set<string>;
+  traitUnits: Set<string>;
+};
+
+function createWorkingSourcePortfolioRow(params: {
+  sourceKey: string;
+  displayName?: string;
+  state?: string;
+  approvedForProd?: boolean;
+}): WorkingSourcePortfolioRow {
+  return {
+    sourceKey: params.sourceKey,
+    displayName: params.displayName ?? params.sourceKey,
+    state: params.state ?? "unregistered",
+    approvedForProd: params.approvedForProd ?? false,
+    inboxedCandidates: 0,
+    reviewedCandidates: 0,
+    acceptedIdeas: 0,
+    acceptedIdeasLast7d: 0,
+    runCount: 0,
+    partialRuns: 0,
+    failedRuns: 0,
+    failedPages: 0,
+    lastCandidateAt: null,
+    lastAcceptedAt: null,
+    acceptedCandidateIds: new Set<string>(),
+    acceptedTitleSignatures: new Set<string>(),
+    traitUnits: new Set<string>(),
+  };
+}
+
+export async function listIngestionSourcePortfolioMetrics(
+  requestedWindowDays = 30,
+): Promise<IngestionSourcePortfolioMetrics> {
+  const ingest = createIngestionServiceRoleClient();
+  const windowDays = coercePortfolioWindowDays(requestedWindowDays);
+  const generatedAt = new Date().toISOString();
+  const windowStartAt = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+  const freshnessStartAt = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const freshnessStartMs = Date.parse(freshnessStartAt);
+
+  const [sourceRegistryRows, createdRows, decisionRows, runRows] = await Promise.all([
+    readPagedRows<RawSourceRegistryPortfolioRow>({
+      label: "source registry portfolio rows",
+      fetchPage: (from, to) =>
+        ingest
+          .from("ingest_source_registry")
+          .select("source_key, display_name, state, approved_for_prod")
+          .order("source_key", { ascending: true })
+          .range(from, to) as Promise<{
+          data: RawSourceRegistryPortfolioRow[] | null;
+          error: { message: string } | null;
+        }>,
+    }),
+    readPagedRows<RawPortfolioCandidateActivityRow>({
+      label: "candidate inbox rows",
+      fetchPage: (from, to) =>
+        ingest
+          .from("ingest_candidates")
+          .select("id, source_key, title, status, created_at, updated_at")
+          .gte("created_at", windowStartAt)
+          .order("created_at", { ascending: false })
+          .range(from, to) as Promise<{
+          data: RawPortfolioCandidateActivityRow[] | null;
+          error: { message: string } | null;
+        }>,
+    }),
+    readPagedRows<RawPortfolioCandidateActivityRow>({
+      label: "candidate decision rows",
+      fetchPage: (from, to) =>
+        ingest
+          .from("ingest_candidates")
+          .select("id, source_key, title, status, created_at, updated_at")
+          .in("status", REVIEWED_PORTFOLIO_STATUSES)
+          .gte("updated_at", windowStartAt)
+          .order("updated_at", { ascending: false })
+          .range(from, to) as Promise<{
+          data: RawPortfolioCandidateActivityRow[] | null;
+          error: { message: string } | null;
+        }>,
+    }),
+    readPagedRows<RawPortfolioRunRow>({
+      label: "run reliability rows",
+      fetchPage: (from, to) =>
+        ingest
+          .from("ingest_runs")
+          .select("source_key, status, meta_json, started_at")
+          .gte("started_at", windowStartAt)
+          .order("started_at", { ascending: false })
+          .range(from, to) as Promise<{
+          data: RawPortfolioRunRow[] | null;
+          error: { message: string } | null;
+        }>,
+    }),
+  ]);
+
+  const sourceKeySet = new Set<string>();
+  for (const row of sourceRegistryRows) {
+    sourceKeySet.add(row.source_key);
+  }
+  for (const row of createdRows) {
+    sourceKeySet.add(row.source_key);
+  }
+  for (const row of decisionRows) {
+    sourceKeySet.add(row.source_key);
+  }
+  for (const row of runRows) {
+    sourceKeySet.add(row.source_key);
   }
 
+  const sourceMap = new Map<string, WorkingSourcePortfolioRow>();
+
+  const ensureSource = (sourceKey: string): WorkingSourcePortfolioRow => {
+    const existing = sourceMap.get(sourceKey);
+    if (existing) {
+      return existing;
+    }
+
+    const next = createWorkingSourcePortfolioRow({ sourceKey });
+    sourceMap.set(sourceKey, next);
+    return next;
+  };
+
+  for (const sourceKey of sourceKeySet) {
+    ensureSource(sourceKey);
+  }
+
+  for (const row of sourceRegistryRows) {
+    sourceMap.set(
+      row.source_key,
+      createWorkingSourcePortfolioRow({
+        sourceKey: row.source_key,
+        displayName: row.display_name,
+        state: row.state,
+        approvedForProd: row.approved_for_prod,
+      }),
+    );
+  }
+
+  for (const row of createdRows) {
+    const source = ensureSource(row.source_key);
+    source.inboxedCandidates += 1;
+    source.lastCandidateAt = maxIsoDatetime(source.lastCandidateAt, row.created_at);
+  }
+
+  const acceptedSourceByCandidateId = new Map<string, string>();
+  for (const row of decisionRows) {
+    const source = ensureSource(row.source_key);
+    const status = parseCandidateStatus(row.status);
+    source.reviewedCandidates += 1;
+
+    if (!ACCEPTED_PORTFOLIO_STATUS_SET.has(status)) {
+      continue;
+    }
+
+    source.acceptedIdeas += 1;
+    source.lastAcceptedAt = maxIsoDatetime(source.lastAcceptedAt, row.updated_at);
+    source.acceptedCandidateIds.add(row.id);
+
+    const normalizedTitle = normalizeTitleSignature(row.title);
+    if (normalizedTitle) {
+      source.acceptedTitleSignatures.add(normalizedTitle);
+    }
+
+    const updatedAtMs = row.updated_at ? Date.parse(row.updated_at) : Number.NaN;
+    if (Number.isFinite(updatedAtMs) && updatedAtMs >= freshnessStartMs) {
+      source.acceptedIdeasLast7d += 1;
+    }
+
+    acceptedSourceByCandidateId.set(row.id, row.source_key);
+  }
+
+  for (const row of runRows) {
+    const source = ensureSource(row.source_key);
+    source.runCount += 1;
+    source.failedPages += parseFailedPagesFromRunMeta(row.meta_json);
+
+    if (row.status === "failed") {
+      source.failedRuns += 1;
+      continue;
+    }
+
+    if (row.status === "partial") {
+      source.partialRuns += 1;
+    }
+  }
+
+  const acceptedCandidateIds = Array.from(acceptedSourceByCandidateId.keys());
+  for (const idChunk of chunkArray(acceptedCandidateIds, 200)) {
+    if (idChunk.length === 0) {
+      continue;
+    }
+
+    const traitRows = await readPagedRows<RawPortfolioTraitRow>({
+      label: "accepted candidate trait rows",
+      fetchPage: (from, to) =>
+        ingest
+          .from("ingest_candidate_traits")
+          .select("candidate_id, trait_type_slug, trait_option_slug")
+          .in("candidate_id", idChunk)
+          .order("candidate_id", { ascending: true })
+          .range(from, to) as Promise<{
+          data: RawPortfolioTraitRow[] | null;
+          error: { message: string } | null;
+        }>,
+    });
+
+    for (const traitRow of traitRows) {
+      const sourceKey = acceptedSourceByCandidateId.get(traitRow.candidate_id);
+      if (!sourceKey) {
+        continue;
+      }
+
+      const source = ensureSource(sourceKey);
+      source.traitUnits.add(`${traitRow.trait_type_slug}|${traitRow.trait_option_slug}`);
+    }
+  }
+
+  const totalAcceptedIdeasLast7d = Array.from(sourceMap.values()).reduce(
+    (sum, row) => sum + row.acceptedIdeasLast7d,
+    0,
+  );
+
+  let diversityMethod: "traits" | "title_uniques" = "traits";
+  let totalDiversityUnits = Array.from(sourceMap.values()).reduce(
+    (sum, row) => sum + row.traitUnits.size,
+    0,
+  );
+
+  if (totalDiversityUnits === 0) {
+    diversityMethod = "title_uniques";
+    totalDiversityUnits = Array.from(sourceMap.values()).reduce(
+      (sum, row) => sum + row.acceptedTitleSignatures.size,
+      0,
+    );
+  }
+
+  const rows: IngestionSourcePortfolioRow[] = Array.from(sourceMap.values())
+    .map((row) => {
+      const precisionProxy =
+        row.inboxedCandidates > 0 ? row.acceptedIdeas / row.inboxedCandidates : null;
+      const maintenanceFailureRate =
+        row.runCount > 0 ? (row.partialRuns + row.failedRuns) / row.runCount : null;
+      const freshnessContribution =
+        totalAcceptedIdeasLast7d > 0 ? row.acceptedIdeasLast7d / totalAcceptedIdeasLast7d : null;
+      const diversityUnits =
+        diversityMethod === "traits" ? row.traitUnits.size : row.acceptedTitleSignatures.size;
+      const diversityContribution =
+        totalDiversityUnits > 0 ? diversityUnits / totalDiversityUnits : null;
+
+      return {
+        sourceKey: row.sourceKey,
+        displayName: row.displayName,
+        state: row.state,
+        approvedForProd: row.approvedForProd,
+        inboxedCandidates: row.inboxedCandidates,
+        reviewedCandidates: row.reviewedCandidates,
+        acceptedIdeas: row.acceptedIdeas,
+        acceptedIdeasLast7d: row.acceptedIdeasLast7d,
+        precisionProxy,
+        freshnessContribution,
+        diversityUnits,
+        diversityContribution,
+        diversityMethod,
+        runCount: row.runCount,
+        partialRuns: row.partialRuns,
+        failedRuns: row.failedRuns,
+        maintenanceFailureRate,
+        failedPages: row.failedPages,
+        lastCandidateAt: row.lastCandidateAt,
+        lastAcceptedAt: row.lastAcceptedAt,
+      } satisfies IngestionSourcePortfolioRow;
+    })
+    .sort((left, right) => {
+      if (right.acceptedIdeas !== left.acceptedIdeas) {
+        return right.acceptedIdeas - left.acceptedIdeas;
+      }
+
+      const rightPrecision = right.precisionProxy ?? -1;
+      const leftPrecision = left.precisionProxy ?? -1;
+      if (rightPrecision !== leftPrecision) {
+        return rightPrecision - leftPrecision;
+      }
+
+      return left.sourceKey.localeCompare(right.sourceKey);
+    });
+
+  return {
+    summary: {
+      generatedAt,
+      windowDays,
+      windowStartAt,
+      totalSources: rows.length,
+      activeSources: rows.filter((row) => row.state === "active" && row.approvedForProd).length,
+      totalInboxedCandidates: rows.reduce((sum, row) => sum + row.inboxedCandidates, 0),
+      totalReviewedCandidates: rows.reduce((sum, row) => sum + row.reviewedCandidates, 0),
+      totalAcceptedIdeas: rows.reduce((sum, row) => sum + row.acceptedIdeas, 0),
+      totalAcceptedIdeasLast7d,
+      diversityMethod,
+      totalDiversityUnits,
+    },
+    rows,
+  };
+}
+
+export async function listIngestionSourceKeys(): Promise<string[]> {
+  const ingest = createIngestionServiceRoleClient();
+  const [{ data: candidateRows, error: candidateError }, { data: registryRows, error: registryError }] =
+    await Promise.all([
+      ingest.from("ingest_candidates").select("source_key").order("source_key", { ascending: true }),
+      ingest
+        .from("ingest_source_registry")
+        .select("source_key")
+        .order("source_key", { ascending: true }),
+    ]);
+
+  if (candidateError) {
+    throw new Error(`Failed to list ingestion source keys from candidates: ${candidateError.message}`);
+  }
+
+  if (registryError) {
+    throw new Error(`Failed to list ingestion source keys from registry: ${registryError.message}`);
+  }
+
+  const keys = [
+    ...(candidateRows ?? []).map((row) => String(row.source_key ?? "")),
+    ...(registryRows ?? []).map((row) => String(row.source_key ?? "")),
+  ];
+
   return Array.from(
-    new Set((data ?? []).map((row) => String(row.source_key ?? "")).filter(Boolean)),
+    new Set(keys.filter((value) => value.length > 0)),
   );
 }
 

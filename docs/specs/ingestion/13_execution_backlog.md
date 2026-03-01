@@ -345,9 +345,25 @@ Acceptance criteria:
 Dependencies: ING-021, ING-022
 
 Checklist:
-- [ ] Dashboard: accepted ideas per source.
-- [ ] Dashboard: source precision proxy and maintenance burden.
-- [ ] Dashboard: freshness and diversity contribution.
+- [x] Dashboard: accepted ideas per source.
+- [x] Dashboard: source precision proxy and maintenance burden.
+- [x] Dashboard: freshness and diversity contribution.
+
+Verification note:
+1. Added source portfolio metric aggregation service:
+   - `listIngestionSourcePortfolioMetrics(windowDays)` in
+     `lib/studio/ingestion.ts`.
+2. Portfolio metrics now include per-source:
+   - accepted ideas
+   - precision proxy (`accepted / inboxed`)
+   - maintenance burden proxy (`(partial+failed) / total runs` + failed pages)
+   - freshness contribution (share of accepted ideas in trailing 7 days)
+   - diversity contribution (traits-based, with title-uniques fallback).
+3. Added portfolio dashboard section in Studio ingestion page:
+   - summary KPI cards
+   - per-source portfolio table
+   - selectable 7/30/90 day portfolio window
+   (`app/(studio)/studio/ingestion/page.tsx`).
 
 Acceptance criteria:
 1. Product/editorial can prioritize crawl budget using objective source metrics.

@@ -6,7 +6,9 @@ import {
   INGEST_CANDIDATE_STATUSES,
   type IngestionConfidenceFilter,
   type IngestionDuplicateRiskFilter,
+  type IngestionPortfolioWindowDays,
   listIngestionCandidates,
+  listIngestionSourcePortfolioMetrics,
   listIngestionSourceKeys,
   type IngestCandidateStatus,
 } from "@/lib/studio/ingestion";
@@ -20,6 +22,7 @@ type IngestionPageProps = {
     duplicateRisk?: string;
     dateFrom?: string;
     dateTo?: string;
+    portfolioWindow?: string;
   }>;
 };
 
@@ -46,6 +49,15 @@ const DUPLICATE_RISK_OPTIONS: Array<{ label: string; value: IngestionDuplicateRi
   { label: "Low duplicate risk", value: "low" },
 ];
 
+const PORTFOLIO_WINDOW_OPTIONS: Array<{
+  label: string;
+  value: IngestionPortfolioWindowDays;
+}> = [
+  { label: "Last 7 days", value: 7 },
+  { label: "Last 30 days", value: 30 },
+  { label: "Last 90 days", value: 90 },
+];
+
 function parseConfidenceFilter(value: string): IngestionConfidenceFilter {
   if (
     value === "all" ||
@@ -68,6 +80,18 @@ function parseDuplicateRiskFilter(value: string): IngestionDuplicateRiskFilter {
   return "all";
 }
 
+function parsePortfolioWindow(value: string): IngestionPortfolioWindowDays {
+  if (value === "7") {
+    return 7;
+  }
+
+  if (value === "90") {
+    return 90;
+  }
+
+  return 30;
+}
+
 function formatDateTime(value: string | null): string {
   if (!value) {
     return "-";
@@ -79,6 +103,14 @@ function formatDateTime(value: string | null): string {
   }
 
   return date.toLocaleString();
+}
+
+function formatPercent(value: number | null): string {
+  if (value === null) {
+    return "-";
+  }
+
+  return `${(value * 100).toFixed(1)}%`;
 }
 
 export default async function StudioIngestionPage({ searchParams }: IngestionPageProps) {
@@ -96,8 +128,9 @@ export default async function StudioIngestionPage({ searchParams }: IngestionPag
   const duplicateRisk = parseDuplicateRiskFilter((params.duplicateRisk ?? "").trim());
   const dateFrom = (params.dateFrom ?? "").trim();
   const dateTo = (params.dateTo ?? "").trim();
+  const portfolioWindow = parsePortfolioWindow((params.portfolioWindow ?? "").trim());
 
-  const [candidates, sourceKeys] = await Promise.all([
+  const [candidates, sourceKeys, sourcePortfolio] = await Promise.all([
     listIngestionCandidates({
       status,
       sourceKey: source || undefined,
@@ -109,6 +142,7 @@ export default async function StudioIngestionPage({ searchParams }: IngestionPag
       limit: 200,
     }),
     listIngestionSourceKeys(),
+    listIngestionSourcePortfolioMetrics(portfolioWindow),
   ]);
 
   return (
@@ -211,6 +245,20 @@ export default async function StudioIngestionPage({ searchParams }: IngestionPag
               className="w-full rounded border border-zinc-300 px-3 py-2"
             />
           </label>
+          <label className="text-sm">
+            <span className="mb-1 block font-medium">Portfolio window</span>
+            <select
+              name="portfolioWindow"
+              defaultValue={String(portfolioWindow)}
+              className="w-full rounded border border-zinc-300 px-3 py-2"
+            >
+              {PORTFOLIO_WINDOW_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <div className="md:col-span-6">
             <button
               type="submit"
@@ -220,6 +268,114 @@ export default async function StudioIngestionPage({ searchParams }: IngestionPag
             </button>
           </div>
         </form>
+
+        <section className="space-y-3 rounded border border-zinc-300 bg-white p-4">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-semibold">Source Portfolio</h3>
+              <p className="text-xs text-zinc-600">
+                Window: last {sourcePortfolio.summary.windowDays} days (from{" "}
+                {formatDateTime(sourcePortfolio.summary.windowStartAt)})
+              </p>
+            </div>
+            <p className="text-xs text-zinc-500">
+              Generated: {formatDateTime(sourcePortfolio.summary.generatedAt)}
+            </p>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-4">
+            <article className="rounded border border-zinc-200 bg-zinc-50 p-3">
+              <p className="text-xs uppercase tracking-wide text-zinc-500">Accepted Ideas</p>
+              <p className="mt-1 text-2xl font-semibold">{sourcePortfolio.summary.totalAcceptedIdeas}</p>
+            </article>
+            <article className="rounded border border-zinc-200 bg-zinc-50 p-3">
+              <p className="text-xs uppercase tracking-wide text-zinc-500">Precision Base</p>
+              <p className="mt-1 text-2xl font-semibold">
+                {sourcePortfolio.summary.totalInboxedCandidates}
+              </p>
+              <p className="text-xs text-zinc-600">inboxed candidates</p>
+            </article>
+            <article className="rounded border border-zinc-200 bg-zinc-50 p-3">
+              <p className="text-xs uppercase tracking-wide text-zinc-500">Active Sources</p>
+              <p className="mt-1 text-2xl font-semibold">
+                {sourcePortfolio.summary.activeSources}
+                <span className="ml-1 text-sm text-zinc-500">/ {sourcePortfolio.summary.totalSources}</span>
+              </p>
+            </article>
+            <article className="rounded border border-zinc-200 bg-zinc-50 p-3">
+              <p className="text-xs uppercase tracking-wide text-zinc-500">Diversity Method</p>
+              <p className="mt-1 text-lg font-semibold">{sourcePortfolio.summary.diversityMethod}</p>
+              <p className="text-xs text-zinc-600">
+                units: {sourcePortfolio.summary.totalDiversityUnits}
+              </p>
+            </article>
+          </div>
+
+          <div className="overflow-x-auto rounded border border-zinc-200">
+            <table className="min-w-full border-collapse text-sm">
+              <thead className="bg-zinc-100 text-left">
+                <tr>
+                  <th className="border-b border-zinc-200 px-3 py-2">Source</th>
+                  <th className="border-b border-zinc-200 px-3 py-2">Accepted</th>
+                  <th className="border-b border-zinc-200 px-3 py-2">Precision Proxy</th>
+                  <th className="border-b border-zinc-200 px-3 py-2">Maintenance Burden</th>
+                  <th className="border-b border-zinc-200 px-3 py-2">Freshness Contribution</th>
+                  <th className="border-b border-zinc-200 px-3 py-2">Diversity Contribution</th>
+                  <th className="border-b border-zinc-200 px-3 py-2">Last Accepted</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sourcePortfolio.rows.length === 0 && (
+                  <tr>
+                    <td className="px-3 py-6 text-center text-zinc-500" colSpan={7}>
+                      No source portfolio rows found.
+                    </td>
+                  </tr>
+                )}
+                {sourcePortfolio.rows.map((row) => (
+                  <tr key={row.sourceKey}>
+                    <td className="border-b border-zinc-100 px-3 py-2">
+                      <p className="font-medium">{row.displayName}</p>
+                      <p className="text-xs text-zinc-600">
+                        {row.sourceKey} • {row.state}
+                        {row.approvedForProd ? "" : " • not approved"}
+                      </p>
+                    </td>
+                    <td className="border-b border-zinc-100 px-3 py-2">
+                      <p>{row.acceptedIdeas}</p>
+                      <p className="text-xs text-zinc-600">
+                        {row.acceptedIdeasLast7d} in last 7d
+                      </p>
+                    </td>
+                    <td className="border-b border-zinc-100 px-3 py-2">
+                      <p>{formatPercent(row.precisionProxy)}</p>
+                      <p className="text-xs text-zinc-600">
+                        {row.acceptedIdeas} / {row.inboxedCandidates}
+                      </p>
+                    </td>
+                    <td className="border-b border-zinc-100 px-3 py-2">
+                      <p>{formatPercent(row.maintenanceFailureRate)}</p>
+                      <p className="text-xs text-zinc-600">
+                        {row.failedRuns + row.partialRuns}/{row.runCount} partial+failed runs •{" "}
+                        {row.failedPages} failed pages
+                      </p>
+                    </td>
+                    <td className="border-b border-zinc-100 px-3 py-2">
+                      {formatPercent(row.freshnessContribution)}
+                    </td>
+                    <td className="border-b border-zinc-100 px-3 py-2">
+                      <p>{formatPercent(row.diversityContribution)}</p>
+                      <p className="text-xs text-zinc-600">{row.diversityUnits} units</p>
+                    </td>
+                    <td className="border-b border-zinc-100 px-3 py-2">
+                      {formatDateTime(row.lastAcceptedAt)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
 
         <p className="text-sm text-zinc-600">Showing {candidates.length} candidates.</p>
 
