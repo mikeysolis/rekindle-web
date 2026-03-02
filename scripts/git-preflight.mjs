@@ -123,10 +123,28 @@ const mask = (value) => {
   return `${trimmed.slice(0, 4)}...${trimmed.slice(-4)}`;
 };
 
+const isSubmodulePath = (file) => {
+  const output = execFileSync("git", ["ls-files", "--stage", "--", file], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+  }).trim();
+
+  if (output.length === 0) {
+    return false;
+  }
+
+  const [mode] = output.split(/\s+/, 2);
+  return mode === "160000";
+};
+
 const scanForSecrets = (stagedFiles) => {
   const findings = [];
 
   for (const file of stagedFiles) {
+    if (isSubmodulePath(file)) {
+      continue;
+    }
+
     const contentBuffer = execFileSync("git", ["show", `:${file}`], {
       cwd: process.cwd(),
       maxBuffer: 20 * 1024 * 1024,
