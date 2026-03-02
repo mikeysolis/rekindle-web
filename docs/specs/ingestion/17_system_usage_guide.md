@@ -345,6 +345,11 @@ Studio/app changes:
 1. run `npx tsc --noEmit`
 2. run `npx next build --webpack`
 
+Git safety checks:
+
+1. run `npm run git:hooks:install` (one-time per clone)
+2. run `npm run git:preflight` before commit/push if you want manual confirmation
+
 ## 11) Reference Paths
 
 1. Ingestion specs root: `docs/specs/ingestion/`

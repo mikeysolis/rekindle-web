@@ -19,6 +19,26 @@ For the full ingestion spec pack/document map:
 
 - `docs/specs/ingestion/README.md`
 
+## Git Safety (Recommended)
+
+Install repo git hooks (pre-commit and pre-push):
+
+```bash
+npm run git:hooks:install
+```
+
+Run preflight checks manually:
+
+```bash
+npm run git:preflight
+```
+
+The hooks/preflight checks:
+
+1. block staging generated artifact paths (`tmp/`, `snapshots/`)
+2. scan staged content for common secret patterns
+3. run staged `gitleaks` checks when `gitleaks` is installed
+
 ## Environment
 
 Set app auth env vars (existing Studio):

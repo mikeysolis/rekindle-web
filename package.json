@@ -39,6 +39,8 @@
     "ingest:cleanup:sql": "node scripts/ingest-db-ops.mjs cleanup-sql",
     "ingest:drill": "node scripts/ingest-local-drill.mjs --print",
     "ingest:drill:run": "node scripts/ingest-local-drill.mjs --run",
+    "git:preflight": "node scripts/git-preflight.mjs",
+    "git:hooks:install": "node scripts/install-git-hooks.mjs",
     "types:gen:local": "supabase gen types typescript --local --schema public > lib/database/types.gen.ts --workdir ./db"
   },
   "dependencies": {
