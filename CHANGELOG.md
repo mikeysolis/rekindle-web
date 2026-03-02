@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 - Partial Studio implementation to permit cataloging Ideas
+- Added data pipeline
 
 ### Updates
 - Added documentation for Idea research and Idea Studio

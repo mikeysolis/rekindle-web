@@ -33,6 +33,9 @@ export default function StudioShell({ role, email, children }: StudioShellProps)
           <Link className={navLinkClass} href="/studio/drafts">
             Drafts
           </Link>
+          <Link className={navLinkClass} href="/studio/ingestion">
+            Ingestion
+          </Link>
           <Link className={navLinkClass} href="/studio/registry">
             Registry
           </Link>

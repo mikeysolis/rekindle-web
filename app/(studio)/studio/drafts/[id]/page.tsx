@@ -19,7 +19,7 @@ import { hasStudioRoleAtLeast } from "@/lib/studio/roles";
 
 type EditDraftPageProps = {
   params: Promise<{ id: string }>;
-  searchParams?: Promise<{ saved?: string; error?: string }>;
+  searchParams?: Promise<{ saved?: string; error?: string; warn?: string }>;
 };
 
 export default async function StudioEditDraftPage({
@@ -100,6 +100,12 @@ export default async function StudioEditDraftPage({
         {query.error && (
           <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
             {query.error}
+          </p>
+        )}
+
+        {query.warn && (
+          <p className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+            Draft was promoted, but one or more non-blocking sync warnings were recorded.
           </p>
         )}
 

@@ -1,0 +1,16 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Action for Happiness//Calendar//EN
+BEGIN:VEVENT
+UID:event-1@example.org
+SUMMARY:Join a local kindness walk
+DESCRIPTION:Walk with neighbors and share one encouraging message.
+URL:https://www.actionforhappiness.org/calendar/event/kindness-walk
+END:VEVENT
+BEGIN:VEVENT
+UID:event-2@example.org
+SUMMARY:Gratitude journaling circle
+DESCRIPTION:Write three good things and discuss with the group.
+URL:https://www.actionforhappiness.org/calendar/event/gratitude-circle
+END:VEVENT
+END:VCALENDAR

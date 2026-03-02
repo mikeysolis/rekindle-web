@@ -20,10 +20,14 @@
 
 # production
 /build
+/pipeline/dist
+/pipeline/.env
 
 # misc
 .DS_Store
 *.pem
+/tmp/
+/snapshots/
 
 # debug
 npm-debug.log*
