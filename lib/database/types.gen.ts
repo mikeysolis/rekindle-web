@@ -9,6 +9,314 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      catalog_import_batches: {
+        Row: {
+          batch_code: string
+          created_at: string
+          family: string
+          id: string
+          import_status: string
+          row_count: number
+          segment: string | null
+          source_path: string
+          source_pool_path: string | null
+          tracker_snapshot: Json
+          updated_at: string
+          version: string | null
+        }
+        Insert: {
+          batch_code: string
+          created_at?: string
+          family: string
+          id?: string
+          import_status?: string
+          row_count: number
+          segment?: string | null
+          source_path: string
+          source_pool_path?: string | null
+          tracker_snapshot?: Json
+          updated_at?: string
+          version?: string | null
+        }
+        Update: {
+          batch_code?: string
+          created_at?: string
+          family?: string
+          id?: string
+          import_status?: string
+          row_count?: number
+          segment?: string | null
+          source_path?: string
+          source_pool_path?: string | null
+          tracker_snapshot?: Json
+          updated_at?: string
+          version?: string | null
+        }
+        Relationships: []
+      }
+      catalog_import_candidates: {
+        Row: {
+          anchor_family: string | null
+          batch_code: string
+          batch_id: string
+          cluster_id: string | null
+          concept_key: string | null
+          created_at: string
+          duplicate_of_candidate_id: string | null
+          duplicate_of_idea_id: string | null
+          editor_note: string | null
+          editor_state: string
+          event_anchor: string | null
+          family: string
+          id: string
+          machine_duplicate_state: string
+          machine_score: number | null
+          metadata: Json
+          preferred_in_cluster: boolean
+          segment: string | null
+          source_item_id: number | null
+          source_row_number: number
+          specificity_level: string | null
+          title: string
+          title_hash: string
+          title_normalized: string
+          updated_at: string
+          version: string | null
+        }
+        Insert: {
+          anchor_family?: string | null
+          batch_code: string
+          batch_id: string
+          cluster_id?: string | null
+          concept_key?: string | null
+          created_at?: string
+          duplicate_of_candidate_id?: string | null
+          duplicate_of_idea_id?: string | null
+          editor_note?: string | null
+          editor_state?: string
+          event_anchor?: string | null
+          family: string
+          id?: string
+          machine_duplicate_state?: string
+          machine_score?: number | null
+          metadata?: Json
+          preferred_in_cluster?: boolean
+          segment?: string | null
+          source_item_id?: number | null
+          source_row_number: number
+          specificity_level?: string | null
+          title: string
+          title_hash: string
+          title_normalized: string
+          updated_at?: string
+          version?: string | null
+        }
+        Update: {
+          anchor_family?: string | null
+          batch_code?: string
+          batch_id?: string
+          cluster_id?: string | null
+          concept_key?: string | null
+          created_at?: string
+          duplicate_of_candidate_id?: string | null
+          duplicate_of_idea_id?: string | null
+          editor_note?: string | null
+          editor_state?: string
+          event_anchor?: string | null
+          family?: string
+          id?: string
+          machine_duplicate_state?: string
+          machine_score?: number | null
+          metadata?: Json
+          preferred_in_cluster?: boolean
+          segment?: string | null
+          source_item_id?: number | null
+          source_row_number?: number
+          specificity_level?: string | null
+          title?: string
+          title_hash?: string
+          title_normalized?: string
+          updated_at?: string
+          version?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_import_candidates_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_import_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_import_candidates_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "v_catalog_import_batches"
+            referencedColumns: ["batch_id"]
+          },
+          {
+            foreignKeyName: "catalog_import_candidates_cluster_id_fkey"
+            columns: ["cluster_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_import_clusters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_import_candidates_cluster_id_fkey"
+            columns: ["cluster_id"]
+            isOneToOne: false
+            referencedRelation: "v_catalog_import_batch_clusters"
+            referencedColumns: ["cluster_id"]
+          },
+          {
+            foreignKeyName: "catalog_import_candidates_duplicate_of_candidate_id_fkey"
+            columns: ["duplicate_of_candidate_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_import_candidates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_import_candidates_duplicate_of_candidate_id_fkey"
+            columns: ["duplicate_of_candidate_id"]
+            isOneToOne: false
+            referencedRelation: "v_catalog_import_cluster_candidates"
+            referencedColumns: ["candidate_id"]
+          },
+          {
+            foreignKeyName: "catalog_import_candidates_duplicate_of_idea_id_fkey"
+            columns: ["duplicate_of_idea_id"]
+            isOneToOne: false
+            referencedRelation: "ideas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_import_candidates_duplicate_of_idea_id_fkey"
+            columns: ["duplicate_of_idea_id"]
+            isOneToOne: false
+            referencedRelation: "v_idea_flat_traits"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      catalog_import_clusters: {
+        Row: {
+          anchor_family: string | null
+          canonical_title: string | null
+          concept_key: string | null
+          created_at: string
+          editorial_note: string | null
+          event_anchor: string | null
+          family: string
+          id: string
+          preferred_candidate_id: string | null
+          review_status: string
+          updated_at: string
+        }
+        Insert: {
+          anchor_family?: string | null
+          canonical_title?: string | null
+          concept_key?: string | null
+          created_at?: string
+          editorial_note?: string | null
+          event_anchor?: string | null
+          family: string
+          id?: string
+          preferred_candidate_id?: string | null
+          review_status?: string
+          updated_at?: string
+        }
+        Update: {
+          anchor_family?: string | null
+          canonical_title?: string | null
+          concept_key?: string | null
+          created_at?: string
+          editorial_note?: string | null
+          event_anchor?: string | null
+          family?: string
+          id?: string
+          preferred_candidate_id?: string | null
+          review_status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_catalog_import_clusters__preferred_candidate_id"
+            columns: ["preferred_candidate_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_import_candidates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_catalog_import_clusters__preferred_candidate_id"
+            columns: ["preferred_candidate_id"]
+            isOneToOne: false
+            referencedRelation: "v_catalog_import_cluster_candidates"
+            referencedColumns: ["candidate_id"]
+          },
+        ]
+      }
+      catalog_import_decisions: {
+        Row: {
+          action: string
+          actor_user_id: string
+          candidate_id: string
+          cluster_id: string | null
+          created_at: string
+          id: string
+          note: string | null
+          reason_code: string | null
+        }
+        Insert: {
+          action: string
+          actor_user_id: string
+          candidate_id: string
+          cluster_id?: string | null
+          created_at?: string
+          id?: string
+          note?: string | null
+          reason_code?: string | null
+        }
+        Update: {
+          action?: string
+          actor_user_id?: string
+          candidate_id?: string
+          cluster_id?: string | null
+          created_at?: string
+          id?: string
+          note?: string | null
+          reason_code?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_import_decisions_candidate_id_fkey"
+            columns: ["candidate_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_import_candidates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_import_decisions_candidate_id_fkey"
+            columns: ["candidate_id"]
+            isOneToOne: false
+            referencedRelation: "v_catalog_import_cluster_candidates"
+            referencedColumns: ["candidate_id"]
+          },
+          {
+            foreignKeyName: "catalog_import_decisions_cluster_id_fkey"
+            columns: ["cluster_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_import_clusters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_import_decisions_cluster_id_fkey"
+            columns: ["cluster_id"]
+            isOneToOne: false
+            referencedRelation: "v_catalog_import_batch_clusters"
+            referencedColumns: ["cluster_id"]
+          },
+        ]
+      }
       connection_invites: {
         Row: {
           accepted_at: string | null
@@ -316,6 +624,20 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "idea_draft_traits_draft_id_fkey"
+            columns: ["draft_id"]
+            isOneToOne: false
+            referencedRelation: "v_catalog_import_batch_clusters"
+            referencedColumns: ["promoted_draft_id"]
+          },
+          {
+            foreignKeyName: "idea_draft_traits_draft_id_fkey"
+            columns: ["draft_id"]
+            isOneToOne: false
+            referencedRelation: "v_catalog_import_cluster_candidates"
+            referencedColumns: ["linked_draft_id"]
+          },
+          {
             foreignKeyName: "idea_draft_traits_trait_option_id_fkey"
             columns: ["trait_option_id"]
             isOneToOne: false
@@ -348,6 +670,7 @@ export type Database = {
       idea_drafts: {
         Row: {
           active: boolean
+          catalog_import_candidate_id: string | null
           created_at: string
           created_by: string | null
           description: string | null
@@ -370,6 +693,7 @@ export type Database = {
         }
         Insert: {
           active?: boolean
+          catalog_import_candidate_id?: string | null
           created_at?: string
           created_by?: string | null
           description?: string | null
@@ -392,6 +716,7 @@ export type Database = {
         }
         Update: {
           active?: boolean
+          catalog_import_candidate_id?: string | null
           created_at?: string
           created_by?: string | null
           description?: string | null
@@ -412,7 +737,22 @@ export type Database = {
           updated_by?: string | null
           what_you_need?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "fk_idea_drafts__catalog_import_candidate_id"
+            columns: ["catalog_import_candidate_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_import_candidates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_idea_drafts__catalog_import_candidate_id"
+            columns: ["catalog_import_candidate_id"]
+            isOneToOne: false
+            referencedRelation: "v_catalog_import_cluster_candidates"
+            referencedColumns: ["candidate_id"]
+          },
+        ]
       }
       idea_traits: {
         Row: {
@@ -1927,6 +2267,158 @@ export type Database = {
           },
         ]
       }
+      v_catalog_import_batch_clusters: {
+        Row: {
+          anchor_family: string | null
+          batch_candidate_count: number | null
+          batch_id: string | null
+          canonical_title: string | null
+          cluster_id: string | null
+          concept_key: string | null
+          event_anchor: string | null
+          family: string | null
+          preferred_candidate_id: string | null
+          preferred_title: string | null
+          promoted_draft_id: string | null
+          review_status: string | null
+          total_candidate_count: number | null
+          updated_at: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_import_candidates_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_import_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_import_candidates_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "v_catalog_import_batches"
+            referencedColumns: ["batch_id"]
+          },
+          {
+            foreignKeyName: "fk_catalog_import_clusters__preferred_candidate_id"
+            columns: ["preferred_candidate_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_import_candidates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_catalog_import_clusters__preferred_candidate_id"
+            columns: ["preferred_candidate_id"]
+            isOneToOne: false
+            referencedRelation: "v_catalog_import_cluster_candidates"
+            referencedColumns: ["candidate_id"]
+          },
+        ]
+      }
+      v_catalog_import_batches: {
+        Row: {
+          batch_code: string | null
+          batch_id: string | null
+          candidate_count: number | null
+          cluster_count: number | null
+          created_at: string | null
+          family: string | null
+          import_status: string | null
+          pending_count: number | null
+          promoted_count: number | null
+          ready_for_draft_count: number | null
+          rejected_count: number | null
+          row_count: number | null
+          segment: string | null
+          source_path: string | null
+          source_pool_path: string | null
+          updated_at: string | null
+          version: string | null
+        }
+        Relationships: []
+      }
+      v_catalog_import_cluster_candidates: {
+        Row: {
+          anchor_family: string | null
+          batch_code: string | null
+          batch_id: string | null
+          candidate_id: string | null
+          cluster_id: string | null
+          created_at: string | null
+          duplicate_of_candidate_id: string | null
+          duplicate_of_idea_id: string | null
+          editor_note: string | null
+          editor_state: string | null
+          event_anchor: string | null
+          family: string | null
+          linked_draft_id: string | null
+          machine_duplicate_state: string | null
+          machine_score: number | null
+          preferred_in_cluster: boolean | null
+          source_row_number: number | null
+          specificity_level: string | null
+          title: string | null
+          updated_at: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_import_candidates_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_import_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_import_candidates_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "v_catalog_import_batches"
+            referencedColumns: ["batch_id"]
+          },
+          {
+            foreignKeyName: "catalog_import_candidates_cluster_id_fkey"
+            columns: ["cluster_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_import_clusters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_import_candidates_cluster_id_fkey"
+            columns: ["cluster_id"]
+            isOneToOne: false
+            referencedRelation: "v_catalog_import_batch_clusters"
+            referencedColumns: ["cluster_id"]
+          },
+          {
+            foreignKeyName: "catalog_import_candidates_duplicate_of_candidate_id_fkey"
+            columns: ["duplicate_of_candidate_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_import_candidates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_import_candidates_duplicate_of_candidate_id_fkey"
+            columns: ["duplicate_of_candidate_id"]
+            isOneToOne: false
+            referencedRelation: "v_catalog_import_cluster_candidates"
+            referencedColumns: ["candidate_id"]
+          },
+          {
+            foreignKeyName: "catalog_import_candidates_duplicate_of_idea_id_fkey"
+            columns: ["duplicate_of_idea_id"]
+            isOneToOne: false
+            referencedRelation: "ideas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_import_candidates_duplicate_of_idea_id_fkey"
+            columns: ["duplicate_of_idea_id"]
+            isOneToOne: false
+            referencedRelation: "v_idea_flat_traits"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       v_idea_flat_traits: {
         Row: {
           created_at: string | null
@@ -2259,6 +2751,65 @@ export type Database = {
           p_weight_delta: number
         }
         Returns: undefined
+      }
+      catalog_import_assert_actor: {
+        Args: { p_actor_user_id: string }
+        Returns: string
+      }
+      catalog_import_mark_candidate_needs_rewrite: {
+        Args: {
+          p_actor_user_id: string
+          p_candidate_id: string
+          p_note?: string
+        }
+        Returns: {
+          candidate_id: string
+          editor_state: string
+        }[]
+      }
+      catalog_import_promote_candidate_to_draft: {
+        Args: { p_actor_user_id: string; p_candidate_id: string }
+        Returns: {
+          created: boolean
+          draft_id: string
+          warnings: Json
+        }[]
+      }
+      catalog_import_reject_candidate: {
+        Args: {
+          p_actor_user_id: string
+          p_candidate_id: string
+          p_note?: string
+          p_reason_code: string
+        }
+        Returns: {
+          candidate_id: string
+          editor_state: string
+        }[]
+      }
+      catalog_import_set_candidate_alternate: {
+        Args: {
+          p_actor_user_id: string
+          p_candidate_id: string
+          p_note?: string
+        }
+        Returns: {
+          candidate_id: string
+          editor_state: string
+        }[]
+      }
+      catalog_import_set_preferred_candidate: {
+        Args: {
+          p_actor_user_id: string
+          p_candidate_id: string
+          p_cluster_id: string
+          p_note?: string
+        }
+        Returns: {
+          canonical_title: string
+          cluster_id: string
+          preferred_candidate_id: string
+        }[]
       }
       create_connection_invite: {
         Args: { p_expires_in?: string; p_inviter_person_id?: string }
