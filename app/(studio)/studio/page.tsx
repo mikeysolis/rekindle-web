@@ -26,13 +26,22 @@ export default async function StudioDashboardPage() {
         <p className="text-sm text-zinc-600">
           Edit drafts, inspect the registry, and export publishable ideas.
         </p>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <Link
             className="rounded border border-zinc-300 bg-white p-4 hover:border-zinc-600"
             href="/studio/drafts"
           >
             <h3 className="font-medium">Drafts</h3>
             <p className="mt-1 text-sm text-zinc-600">Create and edit idea drafts.</p>
+          </Link>
+          <Link
+            className="rounded border border-zinc-300 bg-white p-4 hover:border-zinc-600"
+            href="/studio/catalog-intake"
+          >
+            <h3 className="font-medium">Catalog Intake</h3>
+            <p className="mt-1 text-sm text-zinc-600">
+              Review generated title batches and promote preferred concepts to drafts.
+            </p>
           </Link>
           {ingestionEnabled && (
             <Link

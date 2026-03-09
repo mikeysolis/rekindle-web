@@ -36,6 +36,9 @@ export default function StudioShell({ role, email, children }: StudioShellProps)
           <Link className={navLinkClass} href="/studio/drafts">
             Drafts
           </Link>
+          <Link className={navLinkClass} href="/studio/catalog-intake">
+            Catalog Intake
+          </Link>
           {ingestionEnabled && (
             <Link className={navLinkClass} href="/studio/ingestion">
               Ingestion
