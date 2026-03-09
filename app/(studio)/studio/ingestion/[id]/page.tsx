@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import StudioShell from "@/components/studio/StudioShell";
+import { hasIngestionEnv } from "@/lib/ingestion/env";
 import { requireStudioUser } from "@/lib/studio/auth";
 import {
   getIngestionCandidateDetail,
@@ -82,6 +83,34 @@ export default async function StudioIngestionDetailPage({
   searchParams,
 }: IngestionDetailPageProps) {
   const studioUser = await requireStudioUser("viewer");
+
+  if (!hasIngestionEnv()) {
+    return (
+      <StudioShell role={studioUser.role} email={studioUser.email}>
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-2xl font-semibold">Ingestion Unavailable</h2>
+            <p className="text-sm text-zinc-600">
+              The scraped-source ingestion workflow is not configured in this Studio environment.
+            </p>
+          </div>
+          <div className="rounded border border-zinc-300 bg-white p-4 text-sm text-zinc-700">
+            <p>
+              This route remains in the app for future use, but it is intentionally inactive in
+              the current deployment mode.
+            </p>
+          </div>
+          <Link
+            href="/studio"
+            className="inline-flex rounded border border-zinc-300 px-4 py-2 text-sm hover:border-zinc-600"
+          >
+            Back to Dashboard
+          </Link>
+        </section>
+      </StudioShell>
+    );
+  }
+
   const { id } = await params;
   const query = (await searchParams) ?? {};
 

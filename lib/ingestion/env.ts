@@ -9,6 +9,13 @@ const ENV_CONTRACT_DOC_PATH = "docs/specs/ingestion/14_environment_and_secrets_c
 
 let cachedEnv: IngestionEnv | null = null;
 
+export function hasIngestionEnv(): boolean {
+  return Boolean(
+    process.env.INGEST_SUPABASE_URL?.trim() &&
+      process.env.INGEST_SUPABASE_SERVICE_ROLE_KEY?.trim(),
+  );
+}
+
 export function getIngestionEnv(): IngestionEnv {
   if (cachedEnv) {
     return cachedEnv;

@@ -3,11 +3,13 @@ import { redirect } from "next/navigation";
 
 import StudioShell from "@/components/studio/StudioShell";
 import { requireStudioUser } from "@/lib/studio/auth";
+import { hasIngestionEnv } from "@/lib/ingestion/env";
 import { hasStudioRoleAtLeast } from "@/lib/studio/roles";
 import { createSupabaseServerClient } from "@/lib/database/server";
 
 export default async function StudioDashboardPage() {
   const studioUser = await requireStudioUser("viewer");
+  const ingestionEnabled = hasIngestionEnv();
 
   async function signOutAction() {
     "use server";
@@ -22,7 +24,7 @@ export default async function StudioDashboardPage() {
       <section className="space-y-4">
         <h2 className="text-2xl font-semibold">Studio Dashboard</h2>
         <p className="text-sm text-zinc-600">
-          Review ingestion candidates, edit drafts, and use Registry to verify traits.
+          Edit drafts, inspect the registry, and export publishable ideas.
         </p>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Link
@@ -32,15 +34,17 @@ export default async function StudioDashboardPage() {
             <h3 className="font-medium">Drafts</h3>
             <p className="mt-1 text-sm text-zinc-600">Create and edit idea drafts.</p>
           </Link>
-          <Link
-            className="rounded border border-zinc-300 bg-white p-4 hover:border-zinc-600"
-            href="/studio/ingestion"
-          >
-            <h3 className="font-medium">Ingestion</h3>
-            <p className="mt-1 text-sm text-zinc-600">
-              Review scraped candidates before promotion.
-            </p>
-          </Link>
+          {ingestionEnabled && (
+            <Link
+              className="rounded border border-zinc-300 bg-white p-4 hover:border-zinc-600"
+              href="/studio/ingestion"
+            >
+              <h3 className="font-medium">Ingestion</h3>
+              <p className="mt-1 text-sm text-zinc-600">
+                Review scraped candidates before promotion.
+              </p>
+            </Link>
+          )}
           <Link
             className="rounded border border-zinc-300 bg-white p-4 hover:border-zinc-600"
             href="/studio/registry"

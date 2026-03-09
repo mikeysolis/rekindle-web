@@ -89,12 +89,7 @@ function requiredKeysForRuntime(runtime) {
     return ["INGEST_SUPABASE_URL", "INGEST_SUPABASE_SERVICE_ROLE_KEY"];
   }
 
-  return [
-    "NEXT_PUBLIC_SUPABASE_URL",
-    "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-    "INGEST_SUPABASE_URL",
-    "INGEST_SUPABASE_SERVICE_ROLE_KEY",
-  ];
+  return ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY"];
 }
 
 function collectErrors(runtime) {
@@ -104,6 +99,19 @@ function collectErrors(runtime) {
   for (const key of requiredKeys) {
     if (!process.env[key]) {
       errors.push(`Missing required env var: ${key}`);
+    }
+  }
+
+  if (runtime === "studio") {
+    const hasIngestUrl = Boolean(process.env.INGEST_SUPABASE_URL);
+    const hasIngestServiceRoleKey = Boolean(
+      process.env.INGEST_SUPABASE_SERVICE_ROLE_KEY,
+    );
+
+    if (hasIngestUrl !== hasIngestServiceRoleKey) {
+      errors.push(
+        "Studio ingestion env must be configured as an all-or-nothing pair: set both INGEST_SUPABASE_URL and INGEST_SUPABASE_SERVICE_ROLE_KEY, or neither.",
+      );
     }
   }
 

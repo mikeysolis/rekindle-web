@@ -1,4 +1,4 @@
-# Rekindle Web (Studio + Ingestion Inbox)
+# Rekindle Web (Studio)
 
 This repo contains:
 
@@ -46,10 +46,13 @@ Set app auth env vars (existing Studio):
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 
-Set ingestion env vars (server-only, do not prefix with `NEXT_PUBLIC_`):
+Optional Studio feature env vars for the legacy scraped-ingestion workflow (server-only, do not prefix with `NEXT_PUBLIC_`):
 
 - `INGEST_SUPABASE_URL`
 - `INGEST_SUPABASE_SERVICE_ROLE_KEY`
+
+Additional ingestion runtime env vars for the pipeline/CLI:
+
 - `INGEST_SNAPSHOT_MODE` (`local` or `supabase`)
 - `INGEST_SNAPSHOT_LOCAL_DIR`
 - `INGEST_SNAPSHOT_BUCKET`
@@ -77,9 +80,10 @@ npm run dev
 
 Primary editorial routes:
 
-- `/studio/ingestion` - ingestion inbox (review/reject/needs work/promote)
 - `/studio/drafts` - draft editing and publish gate
 - `/studio/export` - CSV export for publishable drafts
+- `/studio/registry` - trait type, option, and binding inspection
+- `/studio/ingestion` - optional scraped-ingestion inbox when ingestion env is configured
 
 ## Ingestion Pipeline (scaffold)
 

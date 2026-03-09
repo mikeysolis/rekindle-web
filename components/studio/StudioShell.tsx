@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { hasIngestionEnv } from "@/lib/ingestion/env";
 import type { StudioRole } from "@/lib/studio/roles";
 
 type StudioShellProps = {
@@ -13,6 +14,8 @@ const navLinkClass =
   "rounded border border-zinc-300 bg-white px-3 py-2 text-sm hover:border-zinc-500";
 
 export default function StudioShell({ role, email, children }: StudioShellProps) {
+  const ingestionEnabled = hasIngestionEnv();
+
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900">
       <header className="border-b border-zinc-200 bg-white">
@@ -33,9 +36,11 @@ export default function StudioShell({ role, email, children }: StudioShellProps)
           <Link className={navLinkClass} href="/studio/drafts">
             Drafts
           </Link>
-          <Link className={navLinkClass} href="/studio/ingestion">
-            Ingestion
-          </Link>
+          {ingestionEnabled && (
+            <Link className={navLinkClass} href="/studio/ingestion">
+              Ingestion
+            </Link>
+          )}
           <Link className={navLinkClass} href="/studio/registry">
             Registry
           </Link>
