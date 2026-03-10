@@ -23,19 +23,25 @@ These docs are intentionally **strategy + operating system** level. They avoid i
 5) **Studio Vision & Workflows** — how the NextJS Studio operationalizes this system long-term
    - `idea-catalog_studio-vision_v0.md`
 
-6) **AI Context Pack** — how to use ChatGPT effectively for idea research and first-pass tagging
+6) **Catalog Intake Operator Guide** — how imported CSV title batches are reviewed and promoted inside Studio
+   - `idea-catalog_catalog-intake_operator-guide_v0.md`
+
+7) **Catalog Intake Full Flow** — the full cross-repo operator flow from generated CSVs to Studio drafts
+   - `idea-catalog_catalog-intake_full-flow_v0.md`
+
+8) **AI Context Pack** — how to use ChatGPT effectively for idea research and first-pass tagging
    - `ai-idea-research_context-pack_v0.md`
 
-7) **Title + Tone Style Guide** — consistency rules + examples (human + AI)
+9) **Title + Tone Style Guide** — consistency rules + examples (human + AI)
    - `idea-catalog_title-tone-style-guide_v0.md`
 
-8) **Milestones & Roadmap** — high-level execution plan across pre-Studio + Studio phases
+10) **Milestones & Roadmap** — high-level execution plan across pre-Studio + Studio phases
    - `idea-catalog_milestones-roadmap_v0.md`
 
-9) **Studio MVP Detailed Implementation Plan (Steps 1-2-3A)** — execution checklist and resume protocol
+11) **Studio MVP Detailed Implementation Plan (Steps 1-2-3A)** — execution checklist and resume protocol
    - `studio_mvp_detailed_implementation_plan_v0.md`
 
-10) **Studio MVP Schema SQL (Steps 1-2-3A)** — copy-ready table + RLS migration for DB repo
+12) **Studio MVP Schema SQL (Steps 1-2-3A)** — copy-ready table + RLS migration for DB repo
    - `studio_mvp_steps_1_2_3A_schema_v0.sql`
 
 ---
