@@ -675,11 +675,13 @@ export type Database = {
           created_by: string | null
           description: string | null
           editorial_note: string | null
-          exported_at: string | null
           id: string
+          idea_id: string | null
           ingest_candidate_id: string | null
           max_minutes: number | null
           min_minutes: number | null
+          published_at: string | null
+          published_by: string | null
           reason_snippet: string | null
           safety_or_boundaries_note: string | null
           source_url: string | null
@@ -698,11 +700,13 @@ export type Database = {
           created_by?: string | null
           description?: string | null
           editorial_note?: string | null
-          exported_at?: string | null
           id?: string
+          idea_id?: string | null
           ingest_candidate_id?: string | null
           max_minutes?: number | null
           min_minutes?: number | null
+          published_at?: string | null
+          published_by?: string | null
           reason_snippet?: string | null
           safety_or_boundaries_note?: string | null
           source_url?: string | null
@@ -721,11 +725,13 @@ export type Database = {
           created_by?: string | null
           description?: string | null
           editorial_note?: string | null
-          exported_at?: string | null
           id?: string
+          idea_id?: string | null
           ingest_candidate_id?: string | null
           max_minutes?: number | null
           min_minutes?: number | null
+          published_at?: string | null
+          published_by?: string | null
           reason_snippet?: string | null
           safety_or_boundaries_note?: string | null
           source_url?: string | null
@@ -751,6 +757,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_catalog_import_cluster_candidates"
             referencedColumns: ["candidate_id"]
+          },
+          {
+            foreignKeyName: "fk_idea_drafts__idea_id"
+            columns: ["idea_id"]
+            isOneToOne: false
+            referencedRelation: "ideas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_idea_drafts__idea_id"
+            columns: ["idea_id"]
+            isOneToOne: false
+            referencedRelation: "v_idea_flat_traits"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -2828,6 +2848,28 @@ export type Database = {
           person_id: string
           time_bucket_option_id: string
         }[]
+      }
+      idea_draft_assert_publish_actor: {
+        Args: { p_actor_user_id: string }
+        Returns: string
+      }
+      idea_draft_publish_to_idea: {
+        Args: { p_actor_user_id: string; p_draft_id: string }
+        Returns: {
+          created_idea: boolean
+          draft_id: string
+          draft_status: string
+          idea_id: string
+        }[]
+      }
+      idea_draft_slug_base: { Args: { p_title: string }; Returns: string }
+      idea_draft_unique_slug: {
+        Args: {
+          p_draft_id: string
+          p_existing_idea_id?: string
+          p_title: string
+        }
+        Returns: string
       }
       inbox_emit_item: {
         Args: {
