@@ -52,3 +52,11 @@ These docs are intentionally **strategy + operating system** level. They avoid i
 - `03_idea-catalog_data-tagging-spec_v1.md` — defines publish gate rules, tiers, and bulk schema
 
 These two specs define the vocabulary (slugs) and the publish gate rules that the docs above assume.
+
+## Checkpoint and publish planning
+
+For the current checkpoint/restore and draft-publish planning work, use:
+
+- [checkpoint README](/Users/mike/Code/rekindle_web/docs/specs/checkpoint/README.md)
+
+Where these older v0 docs differ from the checkpoint spec pack, the checkpoint spec pack is authoritative for upcoming implementation.
