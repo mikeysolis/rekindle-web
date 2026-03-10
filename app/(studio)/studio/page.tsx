@@ -24,7 +24,7 @@ export default async function StudioDashboardPage() {
       <section className="space-y-4">
         <h2 className="text-2xl font-semibold">Studio Dashboard</h2>
         <p className="text-sm text-zinc-600">
-          Edit drafts, inspect the registry, and export publishable ideas.
+          Review catalog intake, edit drafts, publish ideas, and export CSVs when needed.
         </p>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <Link
@@ -32,7 +32,9 @@ export default async function StudioDashboardPage() {
             href="/studio/drafts"
           >
             <h3 className="font-medium">Drafts</h3>
-            <p className="mt-1 text-sm text-zinc-600">Create and edit idea drafts.</p>
+            <p className="mt-1 text-sm text-zinc-600">
+              Create and edit draft records, then publish approved ideas.
+            </p>
           </Link>
           <Link
             className="rounded border border-zinc-300 bg-white p-4 hover:border-zinc-600"
@@ -65,8 +67,10 @@ export default async function StudioDashboardPage() {
             className="rounded border border-zinc-300 bg-white p-4 hover:border-zinc-600"
             href="/studio/export"
           >
-            <h3 className="font-medium">Export</h3>
-            <p className="mt-1 text-sm text-zinc-600">Download publishable drafts as CSV.</p>
+            <h3 className="font-medium">CSV Export</h3>
+            <p className="mt-1 text-sm text-zinc-600">
+              Download publishable drafts as CSV for secondary workflows.
+            </p>
           </Link>
         </div>
 

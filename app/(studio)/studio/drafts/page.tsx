@@ -33,9 +33,8 @@ function formatDateTime(value: string | null): string {
 
 const statusFilterOptions: Array<{ label: string; value: DraftStatus }> = [
   { label: "Draft", value: "draft" },
-  { label: "Review", value: "review" },
   { label: "Publishable", value: "publishable" },
-  { label: "Exported", value: "exported" },
+  { label: "Published", value: "published" },
 ];
 
 export default async function StudioDraftsPage({ searchParams }: DraftsPageProps) {
@@ -63,7 +62,7 @@ export default async function StudioDraftsPage({ searchParams }: DraftsPageProps
           <div>
             <h2 className="text-2xl font-semibold">Drafts</h2>
             <p className="text-sm text-zinc-600">
-              Draft idea catalog entries with publish-gate readiness.
+              Draft idea catalog entries with publish-gate readiness and publish state.
             </p>
           </div>
           {hasStudioRoleAtLeast(studioUser.role, "editor") && (
@@ -107,6 +106,7 @@ export default async function StudioDraftsPage({ searchParams }: DraftsPageProps
                 <th className="border-b border-zinc-200 px-3 py-2">Title</th>
                 <th className="border-b border-zinc-200 px-3 py-2">Status</th>
                 <th className="border-b border-zinc-200 px-3 py-2">Gate</th>
+                <th className="border-b border-zinc-200 px-3 py-2">Linked Idea</th>
                 <th className="border-b border-zinc-200 px-3 py-2">Updated</th>
                 <th className="border-b border-zinc-200 px-3 py-2" />
               </tr>
@@ -116,7 +116,7 @@ export default async function StudioDraftsPage({ searchParams }: DraftsPageProps
                 <tr>
                   <td
                     className="px-3 py-6 text-center text-zinc-500"
-                    colSpan={5}
+                    colSpan={6}
                   >
                     No drafts found.
                   </td>
@@ -141,15 +141,24 @@ export default async function StudioDraftsPage({ searchParams }: DraftsPageProps
                     </td>
                     <td className="border-b border-zinc-100 px-3 py-2">{draft.status}</td>
                     <td className="border-b border-zinc-100 px-3 py-2">
-                      <span
-                        className={
-                          gate.isPublishable
-                            ? "rounded bg-green-100 px-2 py-1 text-xs text-green-700"
-                            : "rounded bg-amber-100 px-2 py-1 text-xs text-amber-700"
-                        }
-                      >
-                        {gate.isPublishable ? "publishable" : "missing requirements"}
-                      </span>
+                      {draft.status === "published" ? (
+                        <span className="rounded bg-blue-100 px-2 py-1 text-xs text-blue-700">
+                          published
+                        </span>
+                      ) : (
+                        <span
+                          className={
+                            gate.isPublishable
+                              ? "rounded bg-green-100 px-2 py-1 text-xs text-green-700"
+                              : "rounded bg-amber-100 px-2 py-1 text-xs text-amber-700"
+                          }
+                        >
+                          {gate.isPublishable ? "publishable" : "missing requirements"}
+                        </span>
+                      )}
+                    </td>
+                    <td className="border-b border-zinc-100 px-3 py-2">
+                      {draft.ideaId ?? "-"}
                     </td>
                     <td className="border-b border-zinc-100 px-3 py-2">
                       {formatDateTime(draft.updatedAt)}

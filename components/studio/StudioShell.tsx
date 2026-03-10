@@ -48,7 +48,7 @@ export default function StudioShell({ role, email, children }: StudioShellProps)
             Registry
           </Link>
           <Link className={navLinkClass} href="/studio/export">
-            Export
+            CSV Export
           </Link>
         </nav>
       </header>

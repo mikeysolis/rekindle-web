@@ -27,9 +27,9 @@ export default async function StudioExportPage() {
   return (
     <StudioShell role={studioUser.role} email={studioUser.email}>
       <section className="space-y-4">
-        <h2 className="text-2xl font-semibold">Export</h2>
+        <h2 className="text-2xl font-semibold">CSV Export</h2>
         <p className="text-sm text-zinc-600">
-          Export publishable drafts in bulk-import CSV shape.
+          Secondary workflow for exporting publishable drafts in bulk-import CSV shape.
         </p>
 
         <div className="rounded border border-zinc-300 bg-white p-4 text-sm">

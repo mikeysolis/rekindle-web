@@ -26,6 +26,9 @@ type DraftEditorFormDraft = {
   status: string;
   sourceUrl: string | null;
   editorialNote: string | null;
+  ideaId: string | null;
+  publishedAt: string | null;
+  publishedBy: string | null;
 };
 
 type DraftEditorFormProps = {
@@ -34,7 +37,8 @@ type DraftEditorFormProps = {
   initialTraitSelections: TraitSelectionsByTypeSlug;
   canEdit: boolean;
   transitionOptions: string[];
-  action: (formData: FormData) => void | Promise<void>;
+  saveAction: (formData: FormData) => void | Promise<void>;
+  publishAction: (formData: FormData) => void | Promise<void>;
 };
 
 type FormState = {
@@ -174,9 +178,11 @@ function toComparableSnapshot(state: FormState, bindings: IdeaTraitBinding[]) {
 function SaveButton({
   canEdit,
   isDirty,
+  currentStatus,
 }: {
   canEdit: boolean;
   isDirty: boolean;
+  currentStatus: string;
 }) {
   const { pending } = useFormStatus();
   const disabled = !canEdit || !isDirty || pending;
@@ -191,8 +197,13 @@ function SaveButton({
     label = "Saving...";
   }
 
+  if (currentStatus === "published" && isDirty && !pending) {
+    label = "Save changes and return to workflow";
+  }
+
   return (
     <button
+      data-intent="save"
       type="submit"
       disabled={disabled}
       className={`w-full rounded px-4 py-2 text-sm text-white ${
@@ -204,13 +215,41 @@ function SaveButton({
   );
 }
 
+function PublishButton({
+  canEdit,
+  canPublish,
+  action,
+}: {
+  canEdit: boolean;
+  canPublish: boolean;
+  action: (formData: FormData) => void | Promise<void>;
+}) {
+  const { pending } = useFormStatus();
+  const disabled = !canEdit || !canPublish || pending;
+
+  return (
+    <button
+      data-intent="publish"
+      formAction={action}
+      type="submit"
+      disabled={disabled}
+      className={`w-full rounded px-4 py-2 text-sm text-white ${
+        disabled ? "bg-zinc-400" : "bg-emerald-700 hover:bg-emerald-600"
+      }`}
+    >
+      {pending ? "Publishing..." : "Publish to Ideas"}
+    </button>
+  );
+}
+
 export default function DraftEditorForm({
   draft,
   bindings,
   initialTraitSelections,
   canEdit,
   transitionOptions,
-  action,
+  saveAction,
+  publishAction,
 }: DraftEditorFormProps) {
   const normalizedInitialTraitSelections = useMemo(
     () => normalizeTraitSelections(bindings, initialTraitSelections),
@@ -231,7 +270,7 @@ export default function DraftEditorForm({
       active: draft.active,
       sourceUrl: draft.sourceUrl ?? "",
       editorialNote: draft.editorialNote ?? "",
-      nextStatus: draft.status,
+      nextStatus: draft.status === "published" ? "publishable" : draft.status,
       traitSelectionsByTypeSlug: normalizedInitialTraitSelections,
     }),
     [draft, normalizedInitialTraitSelections],
@@ -415,20 +454,39 @@ export default function DraftEditorForm({
     element.scrollIntoView({ behavior: "smooth", block: "center" });
   }, []);
 
+  const isFieldMissing = (fieldKey: string) => missingBaseFieldSet.has(fieldKey);
+  const isPublished = draft.status === "published";
+  const canPublishNow =
+    canEdit && !isDirty && gate.isPublishable && draft.status === "publishable";
+
   const handleSubmit = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
+      const nativeEvent = event.nativeEvent as SubmitEvent;
+      const submitter = nativeEvent.submitter;
+      const submitIntent =
+        submitter instanceof HTMLButtonElement
+          ? submitter.getAttribute("data-intent") ?? "save"
+          : "save";
+
+      if (submitIntent === "publish") {
+        if (!canPublishNow) {
+          event.preventDefault();
+        }
+
+        return;
+      }
+
       if (!canEdit || !isDirty) {
         event.preventDefault();
       }
     },
-    [canEdit, isDirty],
+    [canEdit, canPublishNow, isDirty],
   );
 
-  const isFieldMissing = (fieldKey: string) => missingBaseFieldSet.has(fieldKey);
-
   return (
-    <form action={action} className="space-y-6" onSubmit={handleSubmit}>
+    <form action={saveAction} className="space-y-6" onSubmit={handleSubmit}>
       <input type="hidden" name="draft_id" value={draft.id} />
+      {isPublished && <input type="hidden" name="next_status" value={state.nextStatus} />}
 
       <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
         <section className="space-y-4 rounded border border-zinc-300 bg-white p-4">
@@ -660,7 +718,11 @@ export default function DraftEditorForm({
 
           <section className="rounded border border-zinc-300 bg-white p-4 text-sm">
             <h3 className="font-semibold">Status</h3>
-            {canEdit ? (
+            <p className="mt-2">
+              Current status: <span className="font-medium">{draft.status}</span>
+            </p>
+
+            {!isPublished && canEdit ? (
               <label className="mt-3 block">
                 <span className="mb-1 block font-medium">Next status</span>
                 <select
@@ -681,13 +743,27 @@ export default function DraftEditorForm({
                   ))}
                 </select>
               </label>
+            ) : isPublished ? (
+              <p className="mt-3 text-xs text-zinc-600">
+                Save any edits first. Normal draft edits move this record back into
+                the draft workflow before it can be published again.
+              </p>
             ) : (
-              <p className="mt-2">Current status: {draft.status}</p>
+              <p className="mt-3 text-xs text-zinc-600">
+                This draft is read-only for your role.
+              </p>
             )}
 
-            <p className="mt-3 text-xs text-zinc-500">
-              Only editors/admins can save changes. Setting `publishable` requires gate pass.
-            </p>
+            <div className="mt-3 space-y-1 text-xs text-zinc-500">
+              <p>Only editors/admins can save changes.</p>
+              <p>Setting `publishable` requires the publish gate to pass.</p>
+              {draft.status === "draft" && gate.isPublishable && !isDirty && (
+                <p>This draft is gate-clean. Save it as `publishable` before publishing.</p>
+              )}
+              {draft.status === "publishable" && isDirty && (
+                <p>Save your changes before publishing the current draft state.</p>
+              )}
+            </div>
             {canEdit && (
               <p className="mt-2 text-xs text-zinc-500">
                 {isDirty ? "Unsaved changes" : "No unsaved changes"}
@@ -695,7 +771,36 @@ export default function DraftEditorForm({
             )}
           </section>
 
-          <SaveButton canEdit={canEdit} isDirty={isDirty} />
+          <section className="rounded border border-zinc-300 bg-white p-4 text-sm">
+            <h3 className="font-semibold">Publish State</h3>
+            <dl className="mt-3 space-y-2">
+              <div>
+                <dt className="text-xs uppercase tracking-wide text-zinc-500">Linked idea</dt>
+                <dd>{draft.ideaId ?? "Not published yet"}</dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase tracking-wide text-zinc-500">Published at</dt>
+                <dd>{draft.publishedAt ?? "-"}</dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase tracking-wide text-zinc-500">Published by</dt>
+                <dd>{draft.publishedBy ?? "-"}</dd>
+              </div>
+            </dl>
+          </section>
+
+          <div className="space-y-3">
+            <SaveButton
+              canEdit={canEdit}
+              isDirty={isDirty}
+              currentStatus={draft.status}
+            />
+            <PublishButton
+              canEdit={canEdit}
+              canPublish={canPublishNow}
+              action={publishAction}
+            />
+          </div>
         </div>
       </div>
 

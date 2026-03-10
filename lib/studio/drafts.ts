@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { createSupabaseServerClient } from "@/lib/database/server";
+import type { Database } from "@/lib/database/types.gen";
 import {
   evaluatePublishGate,
   type PublishGateResult,
@@ -10,9 +11,8 @@ import type { IdeaTraitBinding } from "@/lib/studio/registry-types";
 
 export const DRAFT_STATUSES = [
   "draft",
-  "review",
   "publishable",
-  "exported",
+  "published",
 ] as const;
 
 export type DraftStatus = (typeof DRAFT_STATUSES)[number];
@@ -38,6 +38,9 @@ export type IdeaDraft = {
   updatedBy: string | null;
   createdAt: string | null;
   updatedAt: string | null;
+  ideaId: string | null;
+  publishedAt: string | null;
+  publishedBy: string | null;
 };
 
 export type DraftEditableFields = {
@@ -71,11 +74,17 @@ export type SaveDraftResult = {
   message?: string;
 };
 
+export type PublishDraftResult = {
+  draftId: string;
+  ideaId: string;
+  draftStatus: DraftStatus;
+  createdIdea: boolean;
+};
+
 const ALLOWED_TRANSITIONS: Record<DraftStatus, DraftStatus[]> = {
-  draft: ["draft", "review"],
-  review: ["review", "draft", "publishable"],
-  publishable: ["publishable", "review", "draft", "exported"],
-  exported: ["exported", "publishable", "review", "draft"],
+  draft: ["draft", "publishable"],
+  publishable: ["publishable", "draft"],
+  published: ["publishable", "draft"],
 };
 
 type RawDraftRow = {
@@ -97,7 +106,13 @@ type RawDraftRow = {
   updated_by?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
+  idea_id?: string | null;
+  published_at?: string | null;
+  published_by?: string | null;
 };
+
+type PublishDraftRpcRow =
+  Database["public"]["Functions"]["idea_draft_publish_to_idea"]["Returns"][number];
 
 function normalizeText(value: FormDataEntryValue | null): string | null {
   if (typeof value !== "string") {
@@ -202,6 +217,9 @@ function mapRawDraftRow(row: RawDraftRow): IdeaDraft {
     updatedBy: row.updated_by ?? null,
     createdAt: row.created_at ?? null,
     updatedAt: row.updated_at ?? null,
+    ideaId: row.idea_id ?? null,
+    publishedAt: row.published_at ?? null,
+    publishedBy: row.published_by ?? null,
   };
 }
 
@@ -239,7 +257,7 @@ export async function getDraftById(draftId: string): Promise<IdeaDraft | null> {
   const { data, error } = await supabase
     .from("idea_drafts")
     .select(
-      "id, title, reason_snippet, description, steps, what_you_need, tips_or_variations, safety_or_boundaries_note, min_minutes, max_minutes, active, status, source_url, editorial_note, created_by, updated_by, created_at, updated_at",
+      "id, title, reason_snippet, description, steps, what_you_need, tips_or_variations, safety_or_boundaries_note, min_minutes, max_minutes, active, status, source_url, editorial_note, created_by, updated_by, created_at, updated_at, idea_id, published_at, published_by",
     )
     .eq("id", draftId)
     .maybeSingle();
@@ -261,7 +279,7 @@ export async function listDrafts(): Promise<IdeaDraft[]> {
   const { data, error } = await supabase
     .from("idea_drafts")
     .select(
-      "id, title, reason_snippet, description, min_minutes, max_minutes, active, status, updated_at",
+      "id, title, reason_snippet, description, min_minutes, max_minutes, active, status, updated_at, idea_id, published_at, published_by",
     )
     .order("updated_at", { ascending: false });
 
@@ -278,7 +296,7 @@ export async function listDraftsByStatus(status: DraftStatus): Promise<IdeaDraft
   const { data, error } = await supabase
     .from("idea_drafts")
     .select(
-      "id, title, reason_snippet, description, steps, what_you_need, tips_or_variations, safety_or_boundaries_note, min_minutes, max_minutes, active, status, source_url, editorial_note, updated_at",
+      "id, title, reason_snippet, description, steps, what_you_need, tips_or_variations, safety_or_boundaries_note, min_minutes, max_minutes, active, status, source_url, editorial_note, updated_at, idea_id, published_at, published_by",
     )
     .eq("status", status)
     .order("updated_at", { ascending: false });
@@ -480,8 +498,20 @@ export async function saveDraft(input: SaveDraftInput): Promise<SaveDraftResult>
   }
 
   const currentStatus = parseDraftStatus(currentRow.status);
+  const gate = evaluatePublishGate({
+    title: input.baseFields.title,
+    reasonSnippet: input.baseFields.reasonSnippet,
+    description: input.baseFields.description,
+    minMinutes: input.baseFields.minMinutes,
+    maxMinutes: input.baseFields.maxMinutes,
+    traitSelectionsByTypeSlug: input.traitSelectionsByTypeSlug,
+    bindings: input.bindings,
+  });
 
-  if (!isStatusTransitionAllowed(currentStatus, input.nextStatus)) {
+  if (
+    currentStatus !== "published" &&
+    !isStatusTransitionAllowed(currentStatus, input.nextStatus)
+  ) {
     return {
       ok: false,
       status: currentStatus,
@@ -495,17 +525,14 @@ export async function saveDraft(input: SaveDraftInput): Promise<SaveDraftResult>
     };
   }
 
-  const gate = evaluatePublishGate({
-    title: input.baseFields.title,
-    reasonSnippet: input.baseFields.reasonSnippet,
-    description: input.baseFields.description,
-    minMinutes: input.baseFields.minMinutes,
-    maxMinutes: input.baseFields.maxMinutes,
-    traitSelectionsByTypeSlug: input.traitSelectionsByTypeSlug,
-    bindings: input.bindings,
-  });
+  const nextStatus =
+    currentStatus === "published"
+      ? gate.isPublishable
+        ? "publishable"
+        : "draft"
+      : input.nextStatus;
 
-  if (input.nextStatus === "publishable" && !gate.isPublishable) {
+  if (nextStatus === "publishable" && !gate.isPublishable) {
     return {
       ok: false,
       status: currentStatus,
@@ -529,7 +556,7 @@ export async function saveDraft(input: SaveDraftInput): Promise<SaveDraftResult>
       active: input.baseFields.active,
       source_url: input.baseFields.sourceUrl,
       editorial_note: input.baseFields.editorialNote,
-      status: input.nextStatus,
+      status: nextStatus,
       updated_by: input.updatedByUserId,
     })
     .eq("id", input.draftId);
@@ -546,7 +573,44 @@ export async function saveDraft(input: SaveDraftInput): Promise<SaveDraftResult>
 
   return {
     ok: true,
-    status: input.nextStatus,
+    status: nextStatus,
     gate,
+    message:
+      currentStatus === "published"
+        ? nextStatus === "publishable"
+          ? "Published draft updated and returned to publishable."
+          : "Published draft updated and returned to draft because the publish gate is no longer satisfied."
+        : undefined,
+  };
+}
+
+export async function publishDraftToIdea(input: {
+  draftId: string;
+  actorUserId: string;
+}): Promise<PublishDraftResult> {
+  const supabase = await createSupabaseServerClient();
+
+  const { data, error } = await supabase
+    .rpc("idea_draft_publish_to_idea", {
+      p_draft_id: input.draftId,
+      p_actor_user_id: input.actorUserId,
+    })
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to publish draft: ${error.message}`);
+  }
+
+  if (!data) {
+    throw new Error("Publish did not return a result row.");
+  }
+
+  const row = data as PublishDraftRpcRow;
+
+  return {
+    draftId: row.draft_id,
+    ideaId: row.idea_id,
+    draftStatus: parseDraftStatus(row.draft_status),
+    createdIdea: Boolean(row.created_idea),
   };
 }
