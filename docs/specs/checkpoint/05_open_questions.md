@@ -1,6 +1,6 @@
-# 05 Open Questions
+# 05 Finalized Decisions And Future Considerations
 
-## Resolved in this spec pass
+## Locked decisions
 
 These items are now locked in the authoritative docs:
 
@@ -15,52 +15,26 @@ These items are now locked in the authoritative docs:
   - restore is admin-only
 - publish contract direction:
   - DB-owned publish RPC from draft to idea
+- auto-save trigger scope:
+  - v1.5 automatic rolling checkpoints refresh only after Studio mutations
+  - no scheduled background refresh in v1 or v1.5
+  - operator uses manual refresh for data that may have changed outside Studio
+- publish metadata:
+  - `published_at`
+  - `published_by`
+  - required in the draft publish model
+- headline metrics:
+  - keep v1 to intake count, draft count, and published idea count
+- Git workflow automation:
+  - no automatic Git commits or pushes from Studio
+- registry-backed idea fields in checkpoint packages:
+  - serialize stable slug forms as canonical restore inputs
 
-## 1) Auto-save trigger scope
+## Remaining future considerations
 
-Question:
+These items are intentionally deferred and do not block implementation:
 
-- should automatic rolling checkpoints be triggered only by Studio mutations
-- or should there be scheduled refreshes to capture data changed outside Studio
-
-Current recommendation:
-
-- start with Studio-triggered auto-save only
-- add scheduled refresh only if published ideas continue to change outside Studio in practice
-
-## 2) Publish metadata shape
-
-Question:
-
-- should drafts also track `published_at` and `published_by`
-
-Current recommendation:
-
-- optional
-- useful but not required to ship v1 checkpointing
-
-## 3) Granularity of headline metrics
-
-Question:
-
-- should the UI show only the top-line checkpoint counts
-- or should it also show richer workflow buckets
-
-Current recommendation:
-
-- keep v1 metrics simple:
-  - catalog intake count
-  - draft count
-  - published idea count
-
-## 4) Git workflow automation
-
-Question:
-
-- should Studio ever try to create Git commits automatically
-
-Current recommendation:
-
-- no, not in v1
-- keep checkpoint file generation in Studio
-- keep commit/push as an operator action
+1. Whether a later phase should add scheduled checkpoint refresh for data changed outside Studio.
+2. Whether a later phase should expose richer workflow metrics beyond the top-line funnel.
+3. Whether a later phase should add checkpoint history browsing and download/upload ergonomics.
+4. Whether the package should later include any additional idea-adjacent child tables beyond `idea_traits`.

@@ -149,7 +149,7 @@ Contains:
 - draft rows
 - draft trait selections
 
-Draft rows should preserve these publish-linked fields once the publish workflow exists:
+Draft rows must preserve these publish-linked fields once the publish workflow exists:
 
 - linked `idea_id`
 - `published_at`
@@ -162,9 +162,9 @@ Contains:
 - idea rows
 - idea trait selections
 
-The `published_ideas` section should preserve:
+The `published_ideas` section must preserve:
 
-- all non-derived columns from `ideas` required to reconstruct the canonical row
+- all non-derived idea content fields required to reconstruct the canonical row
   - current explicit set:
     - `id`
     - `slug`
@@ -173,18 +173,20 @@ The `published_ideas` section should preserve:
     - `reason_snippet`
     - `min_minutes`
     - `max_minutes`
-    - `effort_id`
-    - `default_cadence_tag_id`
     - `image_url`
     - `is_global`
     - `is_deleted`
     - `created_at`
     - `created_by_user_id`
+- stable slug-based representations for registry-backed fields instead of treating raw foreign-key IDs as canonical
+  - current explicit set:
+    - `effort_slug`
+    - `default_cadence_tag_slug`
 - the linked `idea_traits` selections expressed canonically by trait slugs
 
 Generated or derived fields such as `search_tsv` are excluded and should be rebuilt by the database.
 
-If a published-idea field points at seeded registry data whose raw ID may vary across resets, the checkpoint format should serialize a stable slug form and resolve the target ID on restore.
+Raw foreign-key IDs for seeded registry-backed idea fields may be included for debugging, but they are not the authoritative restore source. Restore should resolve IDs from the stored slug forms.
 
 The implementation should not infer published ideas from draft slugs or other heuristics during restore. It should restore the exact exported linked idea set.
 

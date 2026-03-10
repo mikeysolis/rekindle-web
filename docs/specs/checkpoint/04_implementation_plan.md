@@ -54,6 +54,8 @@ Add automatic rolling `latest` checkpoint behavior.
 - mark content dirty after state-changing Studio actions
 - debounce and refresh one rolling checkpoint file
 - show `last auto checkpoint` in Studio
+- restrict auto-refresh to Studio-driven mutations only
+- keep manual `Refresh latest checkpoint now` for data that may have changed outside Studio
 
 ### Excluded
 

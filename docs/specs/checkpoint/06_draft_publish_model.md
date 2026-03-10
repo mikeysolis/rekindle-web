@@ -99,12 +99,12 @@ Why:
 - simpler restore logic
 - easier UI display on the draft page
 
-Optional additional metadata:
+Required additional metadata:
 
 - `published_at`
 - `published_by`
 
-These metadata fields are useful, but they are not required to ship the checkpoint system or the first publish workflow.
+These fields support auditability, checkpoint provenance, and more reliable restore inspection. They should be added as part of the `rekindle-db` publish workflow work.
 
 ## Relationship to checkpointing
 

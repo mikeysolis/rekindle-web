@@ -79,6 +79,10 @@ Behavior:
 - any state-changing Studio action marks content as dirty
 - after a debounce window, Studio refreshes one rolling `latest` checkpoint file
 - manual named checkpoint still exists for explicit milestones
+- no scheduled background refresh runs in v1.5
+- if data may have changed outside Studio, the operator must use:
+  - `Refresh latest checkpoint now`
+  - or `Create named checkpoint`
 
 Reasons to keep both:
 

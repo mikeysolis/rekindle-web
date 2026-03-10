@@ -83,12 +83,18 @@ This will likely require:
 - new migration altering the check constraint on `idea_drafts.status`
 - app/web code updates after the DB contract is ready
 
-### B) Add publish metadata if cleanly convenient
+### B) Add publish metadata
 
-Optional but useful:
+Required fields:
 
 - `published_at timestamptz null`
 - `published_by uuid null`
+
+Reason:
+
+- publish auditability
+- checkpoint provenance
+- simpler operator inspection after restore
 
 ### C) Add publish RPC or equivalent DB-owned contract
 
@@ -110,7 +116,8 @@ Required behavior:
   - do not try to match a different idea heuristically by slug or title
 - replace canonical `idea_traits` for the linked idea with the draft's current canonical trait selections
 - set draft status to `published`
-- set publish metadata if those columns exist
+- set `published_at`
+- set `published_by`
 - return the linked `draft_id` and `idea_id`
 
 Recommended return shape:
