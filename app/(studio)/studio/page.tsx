@@ -26,7 +26,7 @@ export default async function StudioDashboardPage() {
         <p className="text-sm text-zinc-600">
           Review catalog intake, edit drafts, publish ideas, and export CSVs when needed.
         </p>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
           <Link
             className="rounded border border-zinc-300 bg-white p-4 hover:border-zinc-600"
             href="/studio/drafts"
@@ -62,6 +62,15 @@ export default async function StudioDashboardPage() {
           >
             <h3 className="font-medium">Registry</h3>
             <p className="mt-1 text-sm text-zinc-600">Inspect trait types, options, and bindings.</p>
+          </Link>
+          <Link
+            className="rounded border border-zinc-300 bg-white p-4 hover:border-zinc-600"
+            href="/studio/checkpoint"
+          >
+            <h3 className="font-medium">Checkpoint</h3>
+            <p className="mt-1 text-sm text-zinc-600">
+              Create Git-backed named checkpoints before resetting the database.
+            </p>
           </Link>
           <Link
             className="rounded border border-zinc-300 bg-white p-4 hover:border-zinc-600"

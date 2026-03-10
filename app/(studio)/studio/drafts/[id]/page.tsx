@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 
 import DraftEditorForm from "@/components/studio/DraftEditorForm";
 import StudioShell from "@/components/studio/StudioShell";
+import { isRedirectError } from "@/lib/navigation";
 import { requireStudioUser } from "@/lib/studio/auth";
 import {
   DRAFT_STATUSES,
@@ -121,6 +122,10 @@ export default async function StudioEditDraftPage({
 
       redirect(`/studio/drafts/${formDraftId}?${params.toString()}`);
     } catch (error) {
+      if (isRedirectError(error)) {
+        throw error;
+      }
+
       const message =
         error instanceof Error ? error.message : "Failed to publish draft.";
       redirect(`/studio/drafts/${formDraftId}?error=${encodeURIComponent(message)}`);

@@ -47,6 +47,9 @@ export default function StudioShell({ role, email, children }: StudioShellProps)
           <Link className={navLinkClass} href="/studio/registry">
             Registry
           </Link>
+          <Link className={navLinkClass} href="/studio/checkpoint">
+            Checkpoint
+          </Link>
           <Link className={navLinkClass} href="/studio/export">
             CSV Export
           </Link>
