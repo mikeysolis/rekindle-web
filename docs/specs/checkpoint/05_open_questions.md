@@ -23,12 +23,18 @@ These items are now locked in the authoritative docs:
   - `published_at`
   - `published_by`
   - required in the draft publish model
+- published-draft edit rule:
+  - any normal save of a previously published draft demotes it to `publishable`
+  - the draft returns to `published` only after an explicit re-publish
 - headline metrics:
   - keep v1 to intake count, draft count, and published idea count
 - Git workflow automation:
   - no automatic Git commits or pushes from Studio
 - registry-backed idea fields in checkpoint packages:
   - serialize stable slug forms as canonical restore inputs
+- export role:
+  - export is not a first-class editorial outcome
+  - publish into canonical `ideas` is the authoritative end-state
 
 ## Remaining future considerations
 

@@ -15,7 +15,7 @@ They should not need to think in terms of backing up arbitrary tables.
 
 ## Recommended UI Shape
 
-Add a dedicated Studio section for checkpointing rather than burying it inside publish/export CSV flows.
+Add a dedicated Studio section for checkpointing rather than burying it inside any publish or legacy export flow.
 
 Suggested surface:
 
@@ -34,6 +34,7 @@ This should coexist with a separate draft publishing workflow.
 
 Checkpointing is for durability.
 Publishing is for moving a publishable draft into canonical `ideas`.
+Legacy CSV export, if retained at all, is a secondary operational tool rather than the canonical final editorial step.
 
 ## Authorization model
 

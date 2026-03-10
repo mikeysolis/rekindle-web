@@ -6,7 +6,7 @@
 --   - add durable draft -> idea linkage
 --   - add publish metadata
 --   - add a DB-owned publish RPC:
---       public.idea_draft_publish_to_idea(p_draft_id uuid)
+--       public.idea_draft_publish_to_idea(p_draft_id uuid, p_actor_user_id uuid)
 --
 -- Notes:
 --   - This is a handoff artifact, not an applied migration in this repo.
@@ -98,14 +98,16 @@ alter table public.idea_drafts
 -- 2) Helper functions
 -- =============================================================================
 
-create or replace function public.idea_draft_assert_publish_actor()
+create or replace function public.idea_draft_assert_publish_actor(
+  p_actor_user_id uuid
+)
 returns uuid
 language plpgsql
 security definer
 set search_path = public, pg_temp
 as $$
 declare
-  v_actor_user_id uuid := auth.uid();
+  v_actor_user_id uuid := coalesce(p_actor_user_id, auth.uid());
 begin
   if coalesce(auth.role(), '') = 'service_role' then
     return v_actor_user_id;
@@ -123,9 +125,9 @@ begin
 end;
 $$;
 
-revoke all on function public.idea_draft_assert_publish_actor() from public;
-grant execute on function public.idea_draft_assert_publish_actor() to authenticated;
-grant execute on function public.idea_draft_assert_publish_actor() to service_role;
+revoke all on function public.idea_draft_assert_publish_actor(uuid) from public;
+grant execute on function public.idea_draft_assert_publish_actor(uuid) to authenticated;
+grant execute on function public.idea_draft_assert_publish_actor(uuid) to service_role;
 
 create or replace function public.idea_draft_slug_base(p_title text)
 returns text
@@ -193,7 +195,8 @@ grant execute on function public.idea_draft_unique_slug(text, uuid, uuid) to ser
 -- =============================================================================
 
 create or replace function public.idea_draft_publish_to_idea(
-  p_draft_id uuid
+  p_draft_id uuid,
+  p_actor_user_id uuid
 )
 returns table (
   draft_id uuid,
@@ -214,7 +217,7 @@ declare
   v_default_cadence_tag_id uuid;
   v_slug text;
 begin
-  v_actor_user_id := public.idea_draft_assert_publish_actor();
+  v_actor_user_id := public.idea_draft_assert_publish_actor(p_actor_user_id);
 
   if p_draft_id is null then
     raise exception 'draft_id is required';
@@ -353,8 +356,8 @@ begin
 end;
 $$;
 
-revoke all on function public.idea_draft_publish_to_idea(uuid) from public;
-grant execute on function public.idea_draft_publish_to_idea(uuid) to authenticated;
-grant execute on function public.idea_draft_publish_to_idea(uuid) to service_role;
+revoke all on function public.idea_draft_publish_to_idea(uuid, uuid) from public;
+grant execute on function public.idea_draft_publish_to_idea(uuid, uuid) to authenticated;
+grant execute on function public.idea_draft_publish_to_idea(uuid, uuid) to service_role;
 
 commit;

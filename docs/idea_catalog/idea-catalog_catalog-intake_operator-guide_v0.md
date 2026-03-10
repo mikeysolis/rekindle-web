@@ -18,7 +18,13 @@ It covers:
 - what each page and button means
 - how promotion hands off into the existing draft workflow
 
-This guide is intentionally operational. It describes the current implemented behavior in `rekindle_web`.
+This guide is intentionally operational. It describes the current Catalog Intake surface in `rekindle_web` and the intended draft continuation workflow after promotion.
+
+Important note:
+
+- Catalog Intake already promotes candidates into drafts
+- the draft workflow is now oriented around real publish behavior
+- canonical publication is the explicit publish step into `ideas`, not the older export-only path
 
 ---
 
@@ -34,6 +40,10 @@ If you are an editor using Catalog Intake for the first time, use this order:
 6. Mark the remaining titles as `alternate`, `needs rewrite`, or `rejected`.
 7. Use `Promote to draft` on the winning candidate.
 8. Continue the editorial process in `/studio/drafts/[id]`.
+9. Move the draft through:
+   - `draft`
+   - `publishable`
+   - `published`
 
 If you need the db-side half of the flow, read:
 
@@ -191,10 +201,15 @@ The intended operator flow is:
    - reject unusable rows
 8. Promote the selected candidate to a draft.
 9. Continue editing in `/studio/drafts/[id]`.
+10. When the draft passes the gate, publish it into canonical `ideas`.
 
 Practical editorial rule:
 
 - For a cluster with multiple candidate variants, choose the strongest candidate first, then promote.
+
+Post-publish edit rule:
+
+- if a previously published draft is edited later, it should return to `publishable` until it is explicitly published again
 
 ---
 

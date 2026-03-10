@@ -26,6 +26,9 @@ Lock the draft publishing model and build manual named checkpoint export/import.
   - `draft`
   - `publishable`
   - `published`
+- replace export-first editorial workflow with publish-first workflow
+- lock post-publish edit behavior:
+  - saving changes to a published draft demotes it back to `publishable`
 - publish-to-ideas planning handoff for `rekindle-db`
 - checkpoint package builder
 - checkpoint restore pipeline
@@ -84,13 +87,15 @@ Add operational polish if needed.
 4. lock `rekindle-db` publish RPC contract
 5. land DB migration/RPC work in `rekindle-db`
 6. lock restore validation rules and permissions
-7. implement export for catalog intake
-8. implement export for drafts and draft traits
-9. implement export for linked published ideas and idea traits
-10. implement restore for all three domains
-11. add Studio UI for manual checkpoint create and restore
-12. validate reset -> restore end to end
-13. only then add automatic rolling checkpoint refresh
+7. refactor web draft workflow away from `review` / `exported`
+8. refactor web UI from export-first to publish-first
+9. implement export for catalog intake
+10. implement export for drafts and draft traits
+11. implement export for linked published ideas and idea traits
+12. implement restore for all three domains
+13. add Studio UI for manual checkpoint create and restore
+14. validate reset -> restore end to end
+15. only then add automatic rolling checkpoint refresh
 
 ## Success criteria
 

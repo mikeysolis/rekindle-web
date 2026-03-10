@@ -99,7 +99,8 @@ It covers both:
 **Deliverables**
 - Idea list + editor + tagging UI.
 - Publish readiness indicators (Tier 1 completeness, warnings).
-- Draft → review → publish workflow.
+- Draft → publishable → published workflow.
+- Published drafts return to publishable if edited before re-publish.
 - “Preview in app” deep-link action (QA convenience).
 
 **Exit criteria**

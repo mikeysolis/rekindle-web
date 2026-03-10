@@ -60,3 +60,8 @@ For the current checkpoint/restore and draft-publish planning work, use:
 - [checkpoint README](/Users/mike/Code/rekindle_web/docs/specs/checkpoint/README.md)
 
 Where these older v0 docs differ from the checkpoint spec pack, the checkpoint spec pack is authoritative for upcoming implementation.
+
+Historical note:
+
+- the older export-only Studio MVP docs in this folder reflect a prior `draft -> review -> publishable -> exported` direction
+- they are useful as historical context, not as the implementation source for the current publish-first workflow

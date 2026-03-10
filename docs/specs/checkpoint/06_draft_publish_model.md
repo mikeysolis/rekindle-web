@@ -128,6 +128,29 @@ The draft UI should eventually support:
 - explicit `Publish to Ideas` action
 - display of linked published idea once publish succeeds
 
+## Post-publish edit rule
+
+`published` should mean the draft is currently in sync with the linked canonical idea.
+
+Because of that, normal editing of a published draft should not leave the row in `published`.
+
+Required web-side behavior:
+
+- if a published draft is edited and saved through the normal draft form, it should be demoted to `publishable`
+- a separate explicit publish action is required to return it to `published`
+
+This keeps the status truthful and avoids silent drift between `idea_drafts` and `ideas`.
+
+## Relationship to export
+
+The forward-looking editorial workflow is:
+
+- `draft`
+- `publishable`
+- `published`
+
+Legacy CSV export may still exist as an auxiliary tool, but it is not the canonical publication path.
+
 The current status filter and editor status options will need to move from:
 
 - `draft`

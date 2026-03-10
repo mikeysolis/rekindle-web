@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document is the handoff context for the future `rekindle-db` work required to support:
+This document is the handoff context for the `rekindle-db` work required to support:
 
 - the new draft status model
 - real publish-to-ideas behavior
@@ -98,9 +98,9 @@ Reason:
 
 ### C) Add publish RPC or equivalent DB-owned contract
 
-Locked recommended RPC surface:
+Locked RPC surface:
 
-- `public.idea_draft_publish_to_idea(p_draft_id uuid)`
+- `public.idea_draft_publish_to_idea(p_draft_id uuid, p_actor_user_id uuid)`
 
 Required behavior:
 
@@ -148,6 +148,17 @@ Recommended rule:
 Trait sync should replace canonical trait assignments for the target idea based on the draft’s current selections.
 
 This means published drafts remain editable and re-publishable. Re-publish updates the same linked idea rather than creating a new one.
+
+## Required web-side semantics
+
+The Studio web app should treat `published` as a synchronized state, not a passive label.
+
+Required web-side rule:
+
+- if an editor changes a published draft and saves through the normal draft form, the draft should be demoted to `publishable`
+- only the explicit publish action should set the draft back to `published`
+
+This keeps draft status aligned with the actual sync state between `idea_drafts` and `ideas`.
 
 ## Checkpoint implications
 

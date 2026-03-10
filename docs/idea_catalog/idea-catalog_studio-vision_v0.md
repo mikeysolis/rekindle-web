@@ -56,9 +56,10 @@ This prevents drift between Studio tagging and the mobile app’s search facets.
 - publish readiness panel
 
 ### 3.3 Publish Workflow
-- statuses: draft → review → publishable → published
+- statuses: draft → publishable → published
 - publish gate enforcement (Tier 1 complete + validation clean)
 - audit trail / revision history
+- if a published draft is edited, it returns to publishable until explicitly re-published
 
 ### 3.4 Candidate Inbox (flywheel)
 Unified intake for:

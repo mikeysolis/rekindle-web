@@ -14,6 +14,7 @@ This document explains the **full flow** for generated catalog title batches:
 2. prepare/import those files into the app database
 3. review them in Studio
 4. promote selected candidates into drafts
+5. publish vetted drafts into canonical ideas
 
 This is the companion to the Studio-side guide in:
 
@@ -33,6 +34,7 @@ If you are operating the full flow, use this order:
 4. Confirm the batch appears in `public.v_catalog_import_batches`.
 5. Hand off to Studio review in `/studio/catalog-intake`.
 6. Promote the winning candidate into a draft.
+7. Continue in the draft workflow until published.
 
 If you only need the Studio review half, read:
 
@@ -216,6 +218,14 @@ After successful promotion, Studio routes the editor into:
 - `/studio/drafts/[draftId]`
 
 That is where the full draft authoring process continues.
+
+The target editorial lifecycle after draft creation is:
+
+- `draft`
+- `publishable`
+- `published`
+
+Canonical publication happens through the draft publish flow into `ideas` and `idea_traits`, not through the older export-only path.
 
 ---
 
