@@ -208,4 +208,4 @@ If SQL is drafted in `rekindle_web` for handoff, it should stay as documentation
 
 Potential future doc artifact:
 
-- a proposed migration SQL draft under `docs/specs/checkpoint/` for copy into `rekindle-db`
+- [09_rekindle-db_publish_migration_draft.sql](/Users/mike/Code/rekindle_web/docs/specs/checkpoint/09_rekindle-db_publish_migration_draft.sql) for copy/adaptation in `rekindle-db`

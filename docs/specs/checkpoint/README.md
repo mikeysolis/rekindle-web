@@ -48,6 +48,7 @@ describe current or superseded behavior and should not be used as the implementa
 6. `06_draft_publish_model.md`
 7. `07_rekindle-db_context_dump.md`
 8. `08_documentation_gap_audit.md`
+9. `09_rekindle-db_publish_migration_draft.sql`
 
 ## Scope Boundaries
 
