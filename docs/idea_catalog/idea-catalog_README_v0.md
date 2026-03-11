@@ -29,19 +29,22 @@ These docs are intentionally **strategy + operating system** level. They avoid i
 7) **Catalog Intake Full Flow** — the full cross-repo operator flow from generated CSVs to Studio drafts
    - `idea-catalog_catalog-intake_full-flow_v0.md`
 
-8) **AI Context Pack** — how to use ChatGPT effectively for idea research and first-pass tagging
+8) **Studio Checkpoint Runbook** — how to preserve and restore Studio/editorial state across DB resets
+   - `idea-catalog_checkpoint-runbook_v0.md`
+
+9) **AI Context Pack** — how to use ChatGPT effectively for idea research and first-pass tagging
    - `ai-idea-research_context-pack_v0.md`
 
-9) **Title + Tone Style Guide** — consistency rules + examples (human + AI)
+10) **Title + Tone Style Guide** — consistency rules + examples (human + AI)
    - `idea-catalog_title-tone-style-guide_v0.md`
 
-10) **Milestones & Roadmap** — high-level execution plan across pre-Studio + Studio phases
+11) **Milestones & Roadmap** — high-level execution plan across pre-Studio + Studio phases
    - `idea-catalog_milestones-roadmap_v0.md`
 
-11) **Studio MVP Detailed Implementation Plan (Steps 1-2-3A)** — execution checklist and resume protocol
+12) **Studio MVP Detailed Implementation Plan (Steps 1-2-3A)** — execution checklist and resume protocol
    - `studio_mvp_detailed_implementation_plan_v0.md`
 
-12) **Studio MVP Schema SQL (Steps 1-2-3A)** — copy-ready table + RLS migration for DB repo
+13) **Studio MVP Schema SQL (Steps 1-2-3A)** — copy-ready table + RLS migration for DB repo
    - `studio_mvp_steps_1_2_3A_schema_v0.sql`
 
 ---

@@ -15,10 +15,15 @@ This document explains the **full flow** for generated catalog title batches:
 3. review them in Studio
 4. promote selected candidates into drafts
 5. publish vetted drafts into canonical ideas
+6. preserve that editorial state with checkpoints before resets
 
 This is the companion to the Studio-side guide in:
 
 - `docs/idea_catalog/idea-catalog_catalog-intake_operator-guide_v0.md`
+
+For reset/restore operations, also read:
+
+- `docs/idea_catalog/idea-catalog_checkpoint-runbook_v0.md`
 
 This document stays in `rekindle_web` on purpose so the parent project contains the complete operational documentation for the feature.
 
@@ -35,6 +40,8 @@ If you are operating the full flow, use this order:
 5. Hand off to Studio review in `/studio/catalog-intake`.
 6. Promote the winning candidate into a draft.
 7. Continue in the draft workflow until published.
+8. Before any DB reset, create and commit a Studio checkpoint.
+9. After reset, run foundation seed only and restore the checkpoint.
 
 If you only need the Studio review half, read:
 
@@ -69,6 +76,7 @@ Practical rule:
 
 - **CSV files enter the system on the db side**
 - **review happens on the web side**
+- **checkpoint restore happens after foundation seed, not after demo content seed**
 
 ---
 
@@ -226,6 +234,30 @@ The target editorial lifecycle after draft creation is:
 - `published`
 
 Canonical publication happens through the draft publish flow into `ideas` and `idea_traits`, not through the older export-only path.
+
+## 7.5 Preserve the Studio state before resets
+
+Once batches have been reviewed and drafts or published ideas exist, Studio state should be preserved with named checkpoints.
+
+Runbook:
+
+1. open `/studio/checkpoint`
+2. create a named checkpoint
+3. commit the checkpoint JSON file to Git
+4. only then reset the DB
+5. run the foundation seed layers
+6. restore the checkpoint from Studio
+
+Use:
+
+- `npm run seed:foundation:local`
+- `npm run seed:users:local`
+
+Or:
+
+- `npm run seed:foundation-users:local`
+
+Do not run demo content seeds before checkpoint restore.
 
 ---
 

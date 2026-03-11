@@ -17,6 +17,7 @@ It covers:
 - how to review imported batches
 - what each page and button means
 - how promotion hands off into the existing draft workflow
+- where checkpointing fits before DB resets
 
 This guide is intentionally operational. It describes the current Catalog Intake surface in `rekindle_web` and the intended draft continuation workflow after promotion.
 
@@ -48,6 +49,10 @@ If you are an editor using Catalog Intake for the first time, use this order:
 If you need the db-side half of the flow, read:
 
 - `/Users/mike/Code/rekindle_web/docs/idea_catalog/idea-catalog_catalog-intake_full-flow_v0.md`
+
+If you need the reset/restore half of the flow, read:
+
+- `/Users/mike/Code/rekindle_web/docs/idea_catalog/idea-catalog_checkpoint-runbook_v0.md`
 
 ---
 
@@ -210,6 +215,10 @@ Practical editorial rule:
 Post-publish edit rule:
 
 - if a previously published draft is edited later, it should return to `publishable` until it is explicitly published again
+
+Checkpoint rule:
+
+- if you are about to reset the DB, create and commit a named Studio checkpoint before doing anything in the db submodule
 
 ---
 
