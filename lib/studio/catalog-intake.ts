@@ -10,6 +10,26 @@ type BatchClusterViewRow =
   Database["public"]["Views"]["v_catalog_import_batch_clusters"]["Row"];
 type ClusterCandidateViewRow =
   Database["public"]["Views"]["v_catalog_import_cluster_candidates"]["Row"];
+type RawClusterCandidateViewRow = ClusterCandidateViewRow & {
+  machine_confidence_tier?: string | null;
+  source_item_id?: number | null;
+};
+type RawSuggestionRpcRow = {
+  source_candidate_id?: string | null;
+  suggested_candidate_id?: string | null;
+  cluster_id?: string | null;
+  batch_id?: string | null;
+  batch_code?: string | null;
+  source_item_id?: number | null;
+  title?: string | null;
+  editor_state?: string | null;
+  preferred_in_cluster?: boolean | null;
+  linked_draft_id?: string | null;
+  score?: number | string | null;
+  match_type?: string | null;
+  execution_mode?: string | null;
+  reason_codes?: Json | null;
+};
 
 export const CATALOG_IMPORT_REJECT_REASON_CODES = [
   "duplicate_existing_candidate",
@@ -149,10 +169,12 @@ export type CatalogImportClusterCandidate = {
   batchCode: string;
   family: string;
   title: string;
+  sourceItemId: number | null;
   editorState: CatalogImportEditorState;
   preferredInCluster: boolean;
   machineDuplicateState: string;
   machineScore: number | null;
+  machineConfidenceTier: string | null;
   duplicateOfCandidateId: string | null;
   duplicateOfIdeaId: string | null;
   linkedDraftId: string | null;
@@ -180,6 +202,23 @@ export type CatalogImportClusterDetail = {
   updatedAt: string;
   promotedDraftId: string | null;
   candidates: CatalogImportClusterCandidate[];
+};
+
+export type CatalogImportCandidateSuggestion = {
+  sourceCandidateId: string;
+  suggestedCandidateId: string;
+  clusterId: string | null;
+  batchId: string;
+  batchCode: string;
+  sourceItemId: number | null;
+  title: string;
+  editorState: CatalogImportEditorState;
+  preferredInCluster: boolean;
+  linkedDraftId: string | null;
+  score: number | null;
+  matchType: string | null;
+  executionMode: string | null;
+  reasonCodes: string[];
 };
 
 export type CatalogImportClusterBatchLink = {
@@ -233,6 +272,18 @@ export type PromoteCatalogImportCandidateToDraftResult = {
   draftId: string;
   created: boolean;
   warnings: string[];
+};
+
+export type SplitCatalogImportCandidateToNewClusterInput = {
+  candidateId: string;
+  actorUserId: string;
+  note?: string | null;
+};
+
+export type SplitCatalogImportCandidateToNewClusterResult = {
+  candidateId: string;
+  oldClusterId: string;
+  newClusterId: string;
 };
 
 function getAppSupabase(
@@ -314,6 +365,27 @@ function normalizeWarnings(value: Json): string[] {
   });
 }
 
+function normalizeJsonStringArray(value: Json | null | undefined): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((entry): entry is string => typeof entry === "string");
+}
+
+function parseNullableNumber(value: number | string | null | undefined): number | null {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
 function mapBatch(row: BatchViewRow): CatalogImportBatch {
   return {
     batchId: requiredString(row.batch_id, "batch_id"),
@@ -365,7 +437,7 @@ function mapBatchCluster(row: BatchClusterViewRow): CatalogImportBatchCluster {
 }
 
 function mapClusterCandidate(
-  row: ClusterCandidateViewRow,
+  row: RawClusterCandidateViewRow,
 ): CatalogImportClusterCandidate {
   return {
     candidateId: requiredString(row.candidate_id, "candidate_id"),
@@ -374,13 +446,15 @@ function mapClusterCandidate(
     batchCode: requiredString(row.batch_code, "batch_code"),
     family: requiredString(row.family, "family"),
     title: requiredString(row.title, "title"),
+    sourceItemId: row.source_item_id ?? null,
     editorState: parseEditorState(row.editor_state),
     preferredInCluster: Boolean(row.preferred_in_cluster),
     machineDuplicateState: requiredString(
       row.machine_duplicate_state,
       "machine_duplicate_state",
     ),
-    machineScore: row.machine_score ?? null,
+    machineScore: parseNullableNumber(row.machine_score),
+    machineConfidenceTier: row.machine_confidence_tier ?? null,
     duplicateOfCandidateId: row.duplicate_of_candidate_id ?? null,
     duplicateOfIdeaId: row.duplicate_of_idea_id ?? null,
     linkedDraftId: row.linked_draft_id ?? null,
@@ -391,6 +465,31 @@ function mapClusterCandidate(
     editorNote: row.editor_note ?? null,
     createdAt: requiredString(row.created_at, "created_at"),
     updatedAt: requiredString(row.updated_at, "updated_at"),
+  };
+}
+
+function mapCandidateSuggestion(row: RawSuggestionRpcRow): CatalogImportCandidateSuggestion {
+  return {
+    sourceCandidateId: requiredString(
+      row.source_candidate_id,
+      "source_candidate_id",
+    ),
+    suggestedCandidateId: requiredString(
+      row.suggested_candidate_id,
+      "suggested_candidate_id",
+    ),
+    clusterId: row.cluster_id ?? null,
+    batchId: requiredString(row.batch_id, "batch_id"),
+    batchCode: requiredString(row.batch_code, "batch_code"),
+    sourceItemId: row.source_item_id ?? null,
+    title: requiredString(row.title, "title"),
+    editorState: parseEditorState(row.editor_state),
+    preferredInCluster: Boolean(row.preferred_in_cluster),
+    linkedDraftId: row.linked_draft_id ?? null,
+    score: parseNullableNumber(row.score),
+    matchType: row.match_type ?? null,
+    executionMode: row.execution_mode ?? null,
+    reasonCodes: normalizeJsonStringArray(row.reason_codes),
   };
 }
 
@@ -510,7 +609,7 @@ export async function getCatalogImportCluster(
       supabase
         .from("v_catalog_import_cluster_candidates")
         .select(
-          "candidate_id, cluster_id, batch_id, batch_code, family, title, editor_state, preferred_in_cluster, machine_duplicate_state, machine_score, duplicate_of_candidate_id, duplicate_of_idea_id, linked_draft_id, source_row_number, specificity_level, event_anchor, anchor_family, editor_note, created_at, updated_at",
+          "candidate_id, cluster_id, batch_id, batch_code, family, title, source_item_id, editor_state, preferred_in_cluster, machine_duplicate_state, machine_score, machine_confidence_tier, duplicate_of_candidate_id, duplicate_of_idea_id, linked_draft_id, source_row_number, specificity_level, event_anchor, anchor_family, editor_note, created_at, updated_at",
         )
         .eq("cluster_id", clusterId)
         .order("preferred_in_cluster", { ascending: false })
@@ -532,7 +631,9 @@ export async function getCatalogImportCluster(
   }
 
   const candidates = sortClusterCandidates(
-    (candidateRows ?? []).map((row) => mapClusterCandidate(row as ClusterCandidateViewRow)),
+    (candidateRows ?? []).map((row) =>
+      mapClusterCandidate(row as RawClusterCandidateViewRow),
+    ),
     clusterRow.preferred_candidate_id ?? null,
   );
   const preferredCandidate =
@@ -708,6 +809,57 @@ export async function promoteCatalogImportCandidateToDraft(
     created: row.created,
     warnings: normalizeWarnings(row.warnings),
   };
+}
+
+export async function splitCatalogImportCandidateToNewCluster(
+  input: SplitCatalogImportCandidateToNewClusterInput,
+  client?: AppSupabaseClient,
+): Promise<SplitCatalogImportCandidateToNewClusterResult> {
+  const supabase = await getAppSupabase(client);
+  const { data, error } = await supabase.rpc(
+    "catalog_import_split_candidate_to_new_cluster",
+    {
+      p_candidate_id: input.candidateId,
+      p_actor_user_id: input.actorUserId,
+      p_note: normalizeNote(input.note),
+    },
+  );
+
+  if (error) {
+    throw new Error(`Failed to split catalog import candidate: ${error.message}`);
+  }
+
+  const row = data?.[0];
+  if (!row) {
+    throw new Error("Catalog intake contract error: split RPC returned no row.");
+  }
+
+  return {
+    candidateId: requiredString(row.candidate_id, "candidate_id"),
+    oldClusterId: requiredString(row.old_cluster_id, "old_cluster_id"),
+    newClusterId: requiredString(row.new_cluster_id, "new_cluster_id"),
+  };
+}
+
+export async function listCatalogImportCandidateSuggestions(
+  candidateId: string,
+  client?: AppSupabaseClient,
+): Promise<CatalogImportCandidateSuggestion[]> {
+  const supabase = await getAppSupabase(client);
+  const { data, error } = await supabase.rpc(
+    "catalog_import_list_candidate_suggestions",
+    {
+      p_candidate_id: candidateId,
+    },
+  );
+
+  if (error) {
+    throw new Error(
+      `Failed to list catalog import candidate suggestions: ${error.message}`,
+    );
+  }
+
+  return (data ?? []).map((row: RawSuggestionRpcRow) => mapCandidateSuggestion(row));
 }
 
 export async function getCatalogImportBatchByClusterId(

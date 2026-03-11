@@ -8,11 +8,13 @@ import {
   CATALOG_IMPORT_REJECT_REASON_OPTIONS,
   getCatalogImportCluster,
   listCatalogImportClusterBatches,
+  listCatalogImportCandidateSuggestions,
   markCatalogImportCandidateNeedsRewrite,
   promoteCatalogImportCandidateToDraft,
   rejectCatalogImportCandidate,
   setCatalogImportCandidateAlternate,
   setCatalogImportPreferredCandidate,
+  splitCatalogImportCandidateToNewCluster,
 } from "@/lib/studio/catalog-intake";
 import { hasStudioRoleAtLeast } from "@/lib/studio/roles";
 
@@ -70,6 +72,14 @@ export default async function StudioCatalogIntakeClusterDetailPage({
   }
 
   const canEdit = hasStudioRoleAtLeast(studioUser.role, "editor");
+  const suggestionsByCandidateId = Object.fromEntries(
+    await Promise.all(
+      cluster.candidates.map(async (candidate) => [
+        candidate.candidateId,
+        await listCatalogImportCandidateSuggestions(candidate.candidateId),
+      ]),
+    ),
+  );
 
   async function setPreferredAction(formData: FormData) {
     "use server";
@@ -217,23 +227,63 @@ export default async function StudioCatalogIntakeClusterDetailPage({
 
     const actingUser = await requireStudioUser("editor");
     const candidateId = String(formData.get("candidate_id") ?? "");
+    const queryParams = new URLSearchParams();
+
+    if (fromBatchId) {
+      queryParams.set("fromBatch", fromBatchId);
+    }
 
     if (!candidateId) {
-      const queryParams = new URLSearchParams();
-      if (fromBatchId) {
-        queryParams.set("fromBatch", fromBatchId);
-      }
       queryParams.set("error", "Invalid candidate id.");
       redirect(buildClusterHref(clusterId, queryParams));
     }
 
-    const result = await promoteCatalogImportCandidateToDraft({
-      candidateId,
-      actorUserId: actingUser.userId,
-    });
+    let result;
+    try {
+      result = await promoteCatalogImportCandidateToDraft({
+        candidateId,
+        actorUserId: actingUser.userId,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      queryParams.set("error", message);
+      redirect(buildClusterHref(clusterId, queryParams));
+    }
 
     const warningQuery = result.warnings.length > 0 ? "?warn=1" : "";
     redirect(`/studio/drafts/${result.draftId}${warningQuery}`);
+  }
+
+  async function splitAction(formData: FormData) {
+    "use server";
+
+    const actingUser = await requireStudioUser("editor");
+    const candidateId = String(formData.get("candidate_id") ?? "");
+    const nextFromBatch = String(formData.get("from_batch") ?? "").trim();
+    const queryParams = new URLSearchParams();
+
+    if (nextFromBatch) {
+      queryParams.set("fromBatch", nextFromBatch);
+    }
+
+    if (!candidateId) {
+      queryParams.set("error", "Invalid candidate id.");
+      redirect(buildClusterHref(clusterId, queryParams));
+    }
+
+    try {
+      const result = await splitCatalogImportCandidateToNewCluster({
+        candidateId,
+        actorUserId: actingUser.userId,
+        note: normalizeText(formData.get("note")),
+      });
+      queryParams.set("saved", "split");
+      redirect(buildClusterHref(result.newClusterId, queryParams));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      queryParams.set("error", message);
+      redirect(buildClusterHref(clusterId, queryParams));
+    }
   }
 
   return (
@@ -348,13 +398,14 @@ export default async function StudioCatalogIntakeClusterDetailPage({
         <div>
           <h3 className="text-lg font-semibold">Cluster candidates</h3>
           <p className="text-sm text-zinc-600">
-            Review all wording variants in this cluster, select the strongest candidate, and
-            promote it into the existing Studio draft workflow.
+            Review wording variants, compare nearby ideas, split any bad grouping, and promote the
+            strongest candidate into the existing Studio draft workflow.
           </p>
         </div>
 
         <CandidateList
           candidates={cluster.candidates}
+          suggestionsByCandidateId={suggestionsByCandidateId}
           canEdit={canEdit}
           clusterPreferredCandidateId={cluster.preferredCandidateId}
           fromBatchId={fromBatchId}
@@ -364,6 +415,7 @@ export default async function StudioCatalogIntakeClusterDetailPage({
           onNeedsRewrite={needsRewriteAction}
           onReject={rejectAction}
           onPromote={promoteAction}
+          onSplit={splitAction}
         />
       </section>
     </StudioShell>

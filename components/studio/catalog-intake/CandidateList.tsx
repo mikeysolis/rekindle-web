@@ -2,11 +2,13 @@ import Link from "next/link";
 
 import type {
   CatalogImportClusterCandidate,
+  CatalogImportCandidateSuggestion,
   CatalogImportRejectReasonCode,
 } from "@/lib/studio/catalog-intake";
 
 type CandidateListProps = {
   candidates: CatalogImportClusterCandidate[];
+  suggestionsByCandidateId: Record<string, CatalogImportCandidateSuggestion[]>;
   canEdit: boolean;
   clusterPreferredCandidateId: string | null;
   fromBatchId: string | null;
@@ -20,6 +22,7 @@ type CandidateListProps = {
   onNeedsRewrite: (formData: FormData) => Promise<void>;
   onReject: (formData: FormData) => Promise<void>;
   onPromote: (formData: FormData) => Promise<void>;
+  onSplit: (formData: FormData) => Promise<void>;
 };
 
 function formatDateTime(value: string): string {
@@ -33,6 +36,7 @@ function formatDateTime(value: string): string {
 
 export default function CandidateList({
   candidates,
+  suggestionsByCandidateId,
   canEdit,
   clusterPreferredCandidateId,
   fromBatchId,
@@ -42,6 +46,7 @@ export default function CandidateList({
   onNeedsRewrite,
   onReject,
   onPromote,
+  onSplit,
 }: CandidateListProps) {
   return (
     <div className="space-y-4">
@@ -58,12 +63,19 @@ export default function CandidateList({
           !candidate.linkedDraftId &&
           (clusterPreferredCandidateId === null ||
             clusterPreferredCandidateId === candidate.candidateId);
+        const canSplit =
+          candidate.editorState !== "promoted" && candidates.length > 1;
+        const suggestions = suggestionsByCandidateId[candidate.candidateId] ?? [];
         const metadataLine = [
           candidate.batchCode,
+          candidate.sourceItemId === null ? null : `item ${candidate.sourceItemId}`,
           `row ${candidate.sourceRowNumber}`,
           candidate.editorState,
           candidate.machineDuplicateState,
-        ].join(" • ");
+          candidate.machineConfidenceTier,
+        ]
+          .filter(Boolean)
+          .join(" • ");
 
         return (
           <section
@@ -95,6 +107,10 @@ export default function CandidateList({
                 {candidate.machineScore === null ? "-" : candidate.machineScore.toFixed(4)}
               </p>
               <p>
+                <span className="font-medium">Machine confidence:</span>{" "}
+                {candidate.machineConfidenceTier ?? "-"}
+              </p>
+              <p>
                 <span className="font-medium">Specificity:</span>{" "}
                 {candidate.specificityLevel ?? "-"}
               </p>
@@ -123,6 +139,70 @@ export default function CandidateList({
                 {formatDateTime(candidate.updatedAt)}
               </p>
             </div>
+
+            {suggestions.length > 0 && (
+              <div className="mt-3 rounded border border-amber-200 bg-amber-50 p-3 text-sm">
+                <p className="font-medium text-amber-900">Similar ideas to review</p>
+                <div className="mt-2 space-y-2">
+                  {suggestions.map((suggestion) => (
+                    <div
+                      key={suggestion.suggestedCandidateId}
+                      className="rounded border border-amber-200 bg-white p-3"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="space-y-1">
+                          <p className="font-medium text-zinc-900">{suggestion.title}</p>
+                          <p className="text-xs text-zinc-600">
+                            {[
+                              suggestion.batchCode,
+                              suggestion.sourceItemId === null
+                                ? null
+                                : `item ${suggestion.sourceItemId}`,
+                              suggestion.editorState,
+                              suggestion.executionMode,
+                            ]
+                              .filter(Boolean)
+                              .join(" • ")}
+                          </p>
+                        </div>
+                        <div className="text-right text-xs text-zinc-600">
+                          <p>
+                            Score:{" "}
+                            {suggestion.score === null ? "-" : suggestion.score.toFixed(4)}
+                          </p>
+                          {suggestion.preferredInCluster && (
+                            <p className="text-green-700">preferred in cluster</p>
+                          )}
+                        </div>
+                      </div>
+                      {suggestion.reasonCodes.length > 0 && (
+                        <p className="mt-2 text-xs text-zinc-600">
+                          Reasons: {suggestion.reasonCodes.join(", ")}
+                        </p>
+                      )}
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {suggestion.clusterId && (
+                          <Link
+                            href={`/studio/catalog-intake/clusters/${suggestion.clusterId}`}
+                            className="rounded border border-zinc-300 px-3 py-1 text-xs hover:border-zinc-600"
+                          >
+                            Open related cluster
+                          </Link>
+                        )}
+                        {suggestion.linkedDraftId && (
+                          <Link
+                            href={`/studio/drafts/${suggestion.linkedDraftId}`}
+                            className="rounded border border-zinc-300 px-3 py-1 text-xs hover:border-zinc-600"
+                          >
+                            Open related draft
+                          </Link>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {candidate.editorNote && (
               <div className="mt-3 rounded border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-700">
@@ -212,10 +292,28 @@ export default function CandidateList({
                         </button>
                       </form>
                     )}
+                    {canSplit && (
+                      <form action={onSplit}>
+                        <input type="hidden" name="candidate_id" value={candidate.candidateId} />
+                        <input type="hidden" name="from_batch" value={fromBatchId ?? ""} />
+                        <button
+                          type="submit"
+                          className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 hover:border-amber-500"
+                        >
+                          Split to new cluster
+                        </button>
+                      </form>
+                    )}
                   </div>
                   {!canPromote && !candidate.linkedDraftId && candidate.editorState !== "rejected" && (
                     <p className="text-xs text-zinc-500">
                       Only the preferred candidate can be promoted once a cluster preference is set.
+                    </p>
+                  )}
+                  {canSplit && (
+                    <p className="text-xs text-zinc-500">
+                      Use split when this candidate should stand on its own instead of sharing the
+                      current concept cluster.
                     </p>
                   )}
                 </div>
