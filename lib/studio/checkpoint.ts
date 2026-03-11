@@ -4,7 +4,7 @@ import { constants as fsConstants } from "node:fs";
 import { join } from "node:path";
 
 import { createSupabaseServerClient } from "@/lib/database/server";
-import type { Database } from "@/lib/database/types.gen";
+import type { Database, Json } from "@/lib/database/types.gen";
 
 type AppSupabase = Awaited<ReturnType<typeof createSupabaseServerClient>>;
 
@@ -123,6 +123,34 @@ export type CurrentCheckpointCounts = Pick<
   "intake_count" | "draft_count" | "published_idea_count"
 >;
 
+export type CheckpointRestoreDryRunReport = {
+  fileName: string;
+  metadata: StudioCheckpointPackage["metadata"] | null;
+  actorUserId: string | null;
+  payloadCounts: CheckpointCounts;
+  targetTableCounts: {
+    catalog_import_batches: number;
+    catalog_import_clusters: number;
+    catalog_import_candidates: number;
+    catalog_import_decisions: number;
+    idea_drafts: number;
+    idea_draft_traits: number;
+    ideas: number;
+    idea_traits: number;
+  };
+  blockers: string[];
+  warnings: string[];
+  canRestore: boolean;
+};
+
+export type CheckpointRestoreResult = {
+  fileName: string;
+  metadata: StudioCheckpointPackage["metadata"];
+  actorUserId: string | null;
+  payloadCounts: CheckpointCounts;
+  warnings: string[];
+};
+
 function getSourceEnvironmentLabel(): string {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 
@@ -154,6 +182,20 @@ function sanitizeLabel(input: string): string {
 
 function sha256(input: string): string {
   return createHash("sha256").update(input).digest("hex");
+}
+
+function resolveNamedCheckpointPath(fileName: string): string {
+  if (
+    !fileName ||
+    fileName.includes("/") ||
+    fileName.includes("\\") ||
+    fileName.includes("..") ||
+    !fileName.endsWith(".checkpoint.json")
+  ) {
+    throw new Error("Invalid checkpoint file name.");
+  }
+
+  return join(NAMED_CHECKPOINT_DIRECTORY, fileName);
 }
 
 async function ensureNamedCheckpointDirectory(): Promise<void> {
@@ -412,6 +454,93 @@ function buildCounts(input: {
   };
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((entry): entry is string => typeof entry === "string");
+}
+
+function readInteger(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function normalizeCheckpointCounts(value: unknown): CheckpointCounts {
+  const record = isRecord(value) ? value : {};
+
+  return {
+    batches: readInteger(record.batches),
+    clusters: readInteger(record.clusters),
+    candidates: readInteger(record.candidates),
+    decisions: readInteger(record.decisions),
+    drafts: readInteger(record.drafts),
+    draft_traits: readInteger(record.draft_traits),
+    ideas: readInteger(record.ideas),
+    idea_traits: readInteger(record.idea_traits),
+    intake_count: readInteger(record.intake_count),
+    draft_count: readInteger(record.draft_count),
+    published_idea_count: readInteger(record.published_idea_count),
+  };
+}
+
+function normalizeTargetTableCounts(value: unknown): CheckpointRestoreDryRunReport["targetTableCounts"] {
+  const record = isRecord(value) ? value : {};
+
+  return {
+    catalog_import_batches: readInteger(record.catalog_import_batches),
+    catalog_import_clusters: readInteger(record.catalog_import_clusters),
+    catalog_import_candidates: readInteger(record.catalog_import_candidates),
+    catalog_import_decisions: readInteger(record.catalog_import_decisions),
+    idea_drafts: readInteger(record.idea_drafts),
+    idea_draft_traits: readInteger(record.idea_draft_traits),
+    ideas: readInteger(record.ideas),
+    idea_traits: readInteger(record.idea_traits),
+  };
+}
+
+function normalizeCheckpointMetadata(
+  value: unknown,
+  fallback: StudioCheckpointPackage["metadata"] | null,
+): StudioCheckpointPackage["metadata"] | null {
+  return isRecord(value) ? (value as StudioCheckpointPackage["metadata"]) : fallback;
+}
+
+function parseRestoreDryRunResponse(
+  data: Json,
+  fallbackMetadata: StudioCheckpointPackage["metadata"] | null,
+): Omit<CheckpointRestoreDryRunReport, "fileName"> {
+  const record = isRecord(data) ? data : {};
+
+  return {
+    metadata: normalizeCheckpointMetadata(record.metadata, fallbackMetadata),
+    actorUserId: typeof record.actor_user_id === "string" ? record.actor_user_id : null,
+    payloadCounts: normalizeCheckpointCounts(record.payload_counts),
+    targetTableCounts: normalizeTargetTableCounts(record.target_table_counts),
+    blockers: readStringArray(record.blockers),
+    warnings: readStringArray(record.warnings),
+    canRestore: record.can_restore === true,
+  };
+}
+
+function parseRestoreResponse(
+  data: Json,
+  fallbackMetadata: StudioCheckpointPackage["metadata"],
+): Omit<CheckpointRestoreResult, "fileName"> {
+  const record = isRecord(data) ? data : {};
+
+  return {
+    metadata: normalizeCheckpointMetadata(record.metadata, fallbackMetadata) ?? fallbackMetadata,
+    actorUserId: typeof record.actor_user_id === "string" ? record.actor_user_id : null,
+    payloadCounts: normalizeCheckpointCounts(record.payload_counts),
+    warnings: readStringArray(record.warnings),
+  };
+}
+
 export async function buildStudioCheckpointPackage(input?: {
   actorUserId?: string | null;
 }): Promise<StudioCheckpointPackage> {
@@ -622,5 +751,71 @@ export async function getCurrentStudioCheckpointCounts(): Promise<CurrentCheckpo
     intake_count: candidateCount ?? 0,
     draft_count: draftCount ?? 0,
     published_idea_count: publishedIdeaCount,
+  };
+}
+
+export async function loadNamedStudioCheckpoint(
+  fileName: string,
+): Promise<StudioCheckpointPackage> {
+  await ensureNamedCheckpointDirectory();
+  const absolutePath = resolveNamedCheckpointPath(fileName);
+  const content = await readFile(absolutePath, "utf8");
+
+  return JSON.parse(content) as StudioCheckpointPackage;
+}
+
+export async function dryRunNamedStudioCheckpointRestore(
+  fileName: string,
+  input: {
+    actorUserId: string;
+  },
+): Promise<CheckpointRestoreDryRunReport> {
+  const packageData = await loadNamedStudioCheckpoint(fileName);
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc("studio_restore_checkpoint_dry_run", {
+    p_actor_user_id: input.actorUserId,
+    p_payload: packageData as unknown as Json,
+  });
+
+  if (error) {
+    throw new Error(`Failed to dry-run checkpoint restore: ${error.message}`);
+  }
+
+  const report = parseRestoreDryRunResponse(data, packageData.metadata);
+
+  return {
+    ...report,
+    fileName,
+  };
+}
+
+export async function restoreNamedStudioCheckpoint(
+  fileName: string,
+  input: {
+    actorUserId: string;
+  },
+): Promise<CheckpointRestoreResult> {
+  const packageData = await loadNamedStudioCheckpoint(fileName);
+  const supabase = await createSupabaseServerClient();
+  const dryRun = await dryRunNamedStudioCheckpointRestore(fileName, input);
+
+  if (!dryRun.canRestore || !dryRun.metadata) {
+    throw new Error(
+      dryRun.blockers[0] ?? "Checkpoint restore is blocked by validation errors.",
+    );
+  }
+
+  const { data, error } = await supabase.rpc("studio_restore_checkpoint", {
+    p_actor_user_id: input.actorUserId,
+    p_payload: packageData as unknown as Json,
+  });
+
+  if (error) {
+    throw new Error(`Failed to restore checkpoint: ${error.message}`);
+  }
+
+  return {
+    ...parseRestoreResponse(data, packageData.metadata),
+    fileName,
   };
 }

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import StudioShell from "@/components/studio/StudioShell";
@@ -5,8 +6,10 @@ import { isRedirectError } from "@/lib/navigation";
 import { requireStudioUser } from "@/lib/studio/auth";
 import {
   createNamedStudioCheckpoint,
+  dryRunNamedStudioCheckpointRestore,
   getCurrentStudioCheckpointCounts,
   listNamedStudioCheckpoints,
+  restoreNamedStudioCheckpoint,
 } from "@/lib/studio/checkpoint";
 import { hasStudioRoleAtLeast } from "@/lib/studio/roles";
 
@@ -14,6 +17,8 @@ type StudioCheckpointPageProps = {
   searchParams?: Promise<{
     created?: string;
     error?: string;
+    file?: string;
+    restored?: string;
   }>;
 };
 
@@ -33,11 +38,29 @@ export default async function StudioCheckpointPage({
   const studioUser = await requireStudioUser("viewer");
   const query = (await searchParams) ?? {};
   const canCreate = hasStudioRoleAtLeast(studioUser.role, "editor");
+  const canPreviewRestore = hasStudioRoleAtLeast(studioUser.role, "editor");
+  const canRestore = hasStudioRoleAtLeast(studioUser.role, "admin");
+  const selectedFile = (query.file ?? "").trim();
 
   const [currentCounts, namedCheckpoints] = await Promise.all([
     getCurrentStudioCheckpointCounts(),
     listNamedStudioCheckpoints(),
   ]);
+  let dryRunReport:
+    | Awaited<ReturnType<typeof dryRunNamedStudioCheckpointRestore>>
+    | null = null;
+  let dryRunError: string | null = null;
+
+  if (selectedFile && canPreviewRestore) {
+    try {
+      dryRunReport = await dryRunNamedStudioCheckpointRestore(selectedFile, {
+        actorUserId: studioUser.userId,
+      });
+    } catch (error) {
+      dryRunError =
+        error instanceof Error ? error.message : "Failed to dry-run checkpoint restore.";
+    }
+  }
 
   async function createNamedCheckpointAction(formData: FormData) {
     "use server";
@@ -67,20 +90,58 @@ export default async function StudioCheckpointPage({
     }
   }
 
+  async function restoreCheckpointAction(formData: FormData) {
+    "use server";
+
+    const actingUser = await requireStudioUser("admin");
+    const fileName = String(formData.get("file_name") ?? "");
+
+    try {
+      const result = await restoreNamedStudioCheckpoint(fileName, {
+        actorUserId: actingUser.userId,
+      });
+      redirect(
+        `/studio/checkpoint?restored=${encodeURIComponent(result.fileName)}`,
+      );
+    } catch (error) {
+      if (isRedirectError(error)) {
+        throw error;
+      }
+
+      const message =
+        error instanceof Error ? error.message : "Failed to restore checkpoint.";
+      const params = new URLSearchParams({
+        error: message,
+      });
+
+      if (fileName) {
+        params.set("file", fileName);
+      }
+
+      redirect(`/studio/checkpoint?${params.toString()}`);
+    }
+  }
+
   return (
     <StudioShell role={studioUser.role} email={studioUser.email}>
       <section className="space-y-4">
         <div className="space-y-1">
           <h2 className="text-2xl font-semibold">Checkpoint</h2>
           <p className="text-sm text-zinc-600">
-            Create Git-backed named checkpoints before database resets. Restore
-            flow is planned next.
+            Create Git-backed named checkpoints before database resets and
+            restore them through the DB-owned checkpoint contract.
           </p>
         </div>
 
         {query.created && (
           <p className="rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
             Named checkpoint created: {query.created}
+          </p>
+        )}
+
+        {query.restored && (
+          <p className="rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+            Checkpoint restored: {query.restored}
           </p>
         )}
 
@@ -172,6 +233,7 @@ export default async function StudioCheckpointPage({
                   <th className="border-b border-zinc-200 px-3 py-2">Created</th>
                   <th className="border-b border-zinc-200 px-3 py-2">File</th>
                   <th className="border-b border-zinc-200 px-3 py-2">Counts</th>
+                  <th className="border-b border-zinc-200 px-3 py-2" />
                 </tr>
               </thead>
               <tbody>
@@ -179,7 +241,7 @@ export default async function StudioCheckpointPage({
                   <tr>
                     <td
                       className="px-3 py-6 text-center text-zinc-500"
-                      colSpan={3}
+                      colSpan={4}
                     >
                       No named checkpoints created yet.
                     </td>
@@ -198,6 +260,18 @@ export default async function StudioCheckpointPage({
                       {checkpoint.metadata.counts.draft_count}, published{" "}
                       {checkpoint.metadata.counts.published_idea_count}
                     </td>
+                    <td className="border-b border-zinc-100 px-3 py-2 text-right">
+                      {canPreviewRestore ? (
+                        <Link
+                          href={`/studio/checkpoint?file=${encodeURIComponent(checkpoint.fileName)}`}
+                          className="rounded border border-zinc-300 px-3 py-1 text-xs hover:border-zinc-600"
+                        >
+                          Dry run restore
+                        </Link>
+                      ) : (
+                        <span className="text-xs text-zinc-400">Editor+</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -205,15 +279,115 @@ export default async function StudioCheckpointPage({
           </div>
         </section>
 
-        <section className="rounded border border-zinc-300 bg-zinc-50 p-4 text-sm text-zinc-600">
-          <p>
-            Next phase: dry-run restore and admin-only restore execution for
-            these checkpoint files.
-          </p>
-          <p className="mt-2">
-            The authoritative contract remains in{" "}
-            <code>docs/specs/checkpoint</code>.
-          </p>
+        <section className="rounded border border-zinc-300 bg-white p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-semibold">Restore Dry Run</h3>
+              <p className="text-sm text-zinc-600">
+                Validate a named checkpoint before restore. Restore execution is
+                admin-only.
+              </p>
+            </div>
+            {selectedFile && (
+              <Link
+                href="/studio/checkpoint"
+                className="rounded border border-zinc-300 px-3 py-2 text-sm hover:border-zinc-600"
+              >
+                Clear selection
+              </Link>
+            )}
+          </div>
+
+          {!canPreviewRestore ? (
+            <p className="mt-4 text-sm text-zinc-500">
+              Editors and admins can run restore dry-run validation.
+            </p>
+          ) : !selectedFile ? (
+            <p className="mt-4 text-sm text-zinc-500">
+              Select a named checkpoint above to validate restore readiness.
+            </p>
+          ) : dryRunError ? (
+            <p className="mt-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {dryRunError}
+            </p>
+          ) : dryRunReport ? (
+            <div className="mt-4 space-y-4">
+              <div className="rounded border border-zinc-200 bg-zinc-50 p-4 text-sm">
+                <p className="font-medium">{dryRunReport.fileName}</p>
+                <p className="mt-1 text-zinc-600">
+                  Created {formatDateTime(dryRunReport.metadata?.created_at ?? "")}
+                </p>
+                <p className="mt-2">
+                  intake {dryRunReport.metadata?.counts.intake_count ?? 0}, drafts{" "}
+                  {dryRunReport.metadata?.counts.draft_count ?? 0}, published{" "}
+                  {dryRunReport.metadata?.counts.published_idea_count ?? 0}
+                </p>
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className="rounded border border-zinc-200 p-4">
+                  <h4 className="font-semibold">Blockers</h4>
+                  {dryRunReport.blockers.length === 0 ? (
+                    <p className="mt-2 text-sm text-green-700">No blockers found.</p>
+                  ) : (
+                    <ul className="mt-2 space-y-2 text-sm text-red-700">
+                      {dryRunReport.blockers.map((blocker) => (
+                        <li key={blocker}>- {blocker}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div className="rounded border border-zinc-200 p-4">
+                  <h4 className="font-semibold">Warnings</h4>
+                  {dryRunReport.warnings.length === 0 ? (
+                    <p className="mt-2 text-sm text-zinc-500">No warnings.</p>
+                  ) : (
+                    <ul className="mt-2 space-y-2 text-sm text-amber-700">
+                      {dryRunReport.warnings.map((warning) => (
+                        <li key={warning}>- {warning}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded border border-zinc-200 bg-zinc-50 p-4 text-sm">
+                <p>
+                  Final decision:{" "}
+                  <span
+                    className={
+                      dryRunReport.canRestore
+                        ? "font-medium text-green-700"
+                        : "font-medium text-red-700"
+                    }
+                  >
+                    {dryRunReport.canRestore ? "can restore" : "blocked"}
+                  </span>
+                </p>
+
+                {canRestore ? (
+                  <form action={restoreCheckpointAction} className="mt-4">
+                    <input type="hidden" name="file_name" value={dryRunReport.fileName} />
+                    <button
+                      type="submit"
+                      disabled={!dryRunReport.canRestore}
+                      className={`rounded px-4 py-2 text-sm text-white ${
+                        dryRunReport.canRestore
+                          ? "bg-red-700 hover:bg-red-600"
+                          : "bg-zinc-400"
+                      }`}
+                    >
+                      Restore checkpoint
+                    </button>
+                  </form>
+                ) : (
+                  <p className="mt-4 text-zinc-500">
+                    Admin access is required to execute restore.
+                  </p>
+                )}
+              </div>
+            </div>
+          ) : null}
         </section>
       </section>
     </StudioShell>

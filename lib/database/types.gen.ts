@@ -3016,6 +3016,34 @@ export type Database = {
         }
         Returns: undefined
       }
+      studio_restore_assert_admin_actor: {
+        Args: { p_actor_user_id: string }
+        Returns: string
+      }
+      studio_restore_auth_user_exists: {
+        Args: { p_user_id: string }
+        Returns: boolean
+      }
+      studio_restore_checkpoint: {
+        Args: { p_actor_user_id: string; p_payload: Json }
+        Returns: Json
+      }
+      studio_restore_checkpoint_dry_run: {
+        Args: { p_actor_user_id: string; p_payload: Json }
+        Returns: Json
+      }
+      studio_restore_checkpoint_stage_payload: {
+        Args: { p_payload: Json }
+        Returns: undefined
+      }
+      studio_restore_preserve_nullable_auth_user_id: {
+        Args: { p_user_id: string }
+        Returns: string
+      }
+      studio_restore_resolve_decision_actor_user_id: {
+        Args: { p_fallback_actor_user_id: string; p_user_id: string }
+        Returns: string
+      }
       update_plan_schedule: {
         Args: {
           p_cadence_tag_id: string
