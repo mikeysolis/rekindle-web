@@ -23,10 +23,8 @@ Suggested surface:
 
 Core UI elements:
 
-- last checkpoint timestamp
+- named checkpoint list
 - checkpoint contents summary
-- dirty/clean status
-- `Refresh latest checkpoint now`
 - `Create named checkpoint`
 - `Restore checkpoint`
 
@@ -71,6 +69,12 @@ Behavior:
 
 V1 assumes that named checkpoints are the primary reliable rollback point before DB resets.
 
+Current implementation status:
+
+- implemented
+- Studio writes named checkpoint JSON files under `checkpoints/studio/named/`
+- operator still commits those files to Git manually
+
 ### V1.5
 
 Add automatic rolling checkpoint behavior.
@@ -101,7 +105,7 @@ Recommended flow:
 3. operator selects a checkpoint file
 4. Studio runs dry-run validation
 5. operator confirms restore
-6. Studio imports the checkpoint package
+6. Studio calls the DB-owned restore RPC with the selected checkpoint payload
 7. Studio reports restored counts
 
 The restore UI should make the restored editorial funnel visible:
@@ -116,6 +120,8 @@ Restore execution rules:
 - admin must explicitly confirm the restore after dry-run
 - V1 restore targets a fresh/reset DB only
 - V1 does not support merge restore into a dirty DB
+- restore execution is DB-owned and transactional, not web-owned and table-by-table
+- the web app should not depend on Auth Admin to make restore succeed
 
 ## Git workflow
 

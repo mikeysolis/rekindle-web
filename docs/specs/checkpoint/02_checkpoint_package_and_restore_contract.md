@@ -194,6 +194,13 @@ The implementation should not infer published ideas from draft slugs or other he
 
 Restore should be intentionally strict.
 
+Implementation note:
+
+- checkpoint package creation lives in `rekindle_web`
+- restore dry-run and restore execution now live in `rekindle-db` through DB-owned RPCs
+- the web app should pass the parsed checkpoint payload and current actor user id to the DB contract
+- the web app should not orchestrate table-by-table restore writes itself
+
 ### Preconditions
 
 - target DB must be fresh/reset for the scoped content tables
@@ -213,26 +220,44 @@ The system should dry-run and validate:
 - missing linked references
 - non-empty target tables if restore mode requires emptiness
 
+The current DB-owned dry-run contract also returns:
+
+- `actor_user_id`
+- payload-derived counts
+- target table counts
+- blockers
+- warnings
+- `can_restore`
+
+### Restore execution model
+
+Restore should be executed as one DB-owned transaction.
+
+The web app should call the restore RPC and rely on the DB layer for:
+
+- empty-target validation
+- auth-backed provenance handling
+- trait slug resolution
+- restore ordering
+- transactional rollback on failure
+
 ### Restore order
 
 Recommended order:
 
-1. catalog intake base rows
-2. drafts
-3. draft traits
-4. published ideas
-5. idea traits
+1. catalog intake batches
+2. published ideas
+3. catalog intake clusters
+4. catalog intake candidates
+5. cluster preferred-candidate linkage patch
+6. drafts
+7. draft traits
+8. idea traits
+9. catalog intake decisions
 
 Because draft-to-idea linkage is part of the target contract, restore should ensure that:
 
 - the linked idea row exists before finalizing the draft linkage
-
-The exact implementation may group catalog intake base rows internally as:
-
-- batches
-- clusters
-- candidates
-- decisions
 
 ## Dry-run report contract
 
@@ -261,6 +286,8 @@ Before restore writes anything, the system should produce a structured dry-run r
   - deprecated package fields present
 - final decision:
   - `can_restore = true|false`
+
+The current DB-owned dry-run/report contract is the implementation source of truth if this document and older planning text ever drift.
 
 V1 restore should be blocked by any blocker. Warnings may be shown without blocking restore.
 

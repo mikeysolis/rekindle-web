@@ -20,10 +20,11 @@ The recommended direction is:
 - keep restore manual
 - commit named checkpoint files to Git
 - phase automatic checkpoint generation in only where it materially reduces operator error
+- keep restore execution DB-owned through `rekindle-db` RPCs rather than web-owned multi-step inserts
 
 ## Authoritative Note
 
-For the upcoming checkpoint and draft-publish implementation work, the authoritative docs are:
+For the current checkpoint and draft-publish system, the authoritative docs are:
 
 - `02_checkpoint_package_and_restore_contract.md`
 - `03_studio_workflow_and_operations.md`
@@ -38,6 +39,22 @@ Older repo docs that still mention:
 - export-only MVP flows
 
 describe current or superseded behavior and should not be used as the implementation source for the new work.
+
+## Implemented Status
+
+The following is now implemented in `rekindle_web`:
+
+- manual named checkpoint creation
+- named checkpoint files written under `checkpoints/studio/named/`
+- Studio dry-run restore UI
+- Studio restore execution UI
+- DB-owned restore contract via `rekindle-db` RPCs
+
+The main remaining planned work is:
+
+- automatic rolling `latest` checkpoints
+- docs/runbook polish
+- final seed-layer split in `rekindle-db`
 
 ## Document Map
 

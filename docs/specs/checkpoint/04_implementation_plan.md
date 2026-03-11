@@ -40,6 +40,8 @@ Lock the draft publishing model and build manual named checkpoint export/import.
   - drafts
   - published ideas
   - associated trait links
+- DB-owned restore contract in `rekindle-db`
+- Studio dry-run and restore UI wired to the DB RPCs
 
 ### Excluded
 
@@ -96,6 +98,27 @@ Add operational polish if needed.
 13. add Studio UI for manual checkpoint create and restore
 14. validate reset -> restore end to end
 15. only then add automatic rolling checkpoint refresh
+
+## Current status
+
+Completed:
+
+1. draft publish model and publish-first Studio workflow
+2. checkpoint package export for:
+   - catalog intake
+   - drafts
+   - linked published ideas
+3. manual named checkpoint creation UI
+4. DB-owned dry-run restore contract in `rekindle-db`
+5. DB-owned restore execution contract in `rekindle-db`
+6. Studio checkpoint dry-run/restore UI wired to those RPCs
+
+Remaining:
+
+1. finalize seed-layer split in `rekindle-db`
+2. update operator/runbook docs
+3. validate one clean end-to-end checkpoint runbook after seed split
+4. decide whether to implement rolling `latest` auto-checkpointing
 
 ## Success criteria
 
