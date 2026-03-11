@@ -261,6 +261,7 @@ export default async function StudioCatalogIntakeClusterDetailPage({
     const candidateId = String(formData.get("candidate_id") ?? "");
     const nextFromBatch = String(formData.get("from_batch") ?? "").trim();
     const queryParams = new URLSearchParams();
+    let newClusterId: string;
 
     if (nextFromBatch) {
       queryParams.set("fromBatch", nextFromBatch);
@@ -277,13 +278,15 @@ export default async function StudioCatalogIntakeClusterDetailPage({
         actorUserId: actingUser.userId,
         note: normalizeText(formData.get("note")),
       });
-      queryParams.set("saved", "split");
-      redirect(buildClusterHref(result.newClusterId, queryParams));
+      newClusterId = result.newClusterId;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       queryParams.set("error", message);
       redirect(buildClusterHref(clusterId, queryParams));
     }
+
+    queryParams.set("saved", "split");
+    redirect(buildClusterHref(newClusterId, queryParams));
   }
 
   return (
