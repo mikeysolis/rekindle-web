@@ -212,76 +212,164 @@ async function assertFileDoesNotExist(path: string): Promise<void> {
   throw new Error("A named checkpoint with the same timestamp and label already exists.");
 }
 
+async function readPagedRows<T>(params: {
+  label: string;
+  fetchPage: (from: number, to: number) => Promise<{
+    data: T[] | null;
+    error: { message: string } | null;
+  }>;
+  batchSize?: number;
+}): Promise<T[]> {
+  const batchSize = params.batchSize ?? 1000;
+  const rows: T[] = [];
+  let from = 0;
+
+  while (true) {
+    const to = from + batchSize - 1;
+    const { data, error } = await params.fetchPage(from, to);
+
+    if (error) {
+      throw new Error(`Failed to load ${params.label}: ${error.message}`);
+    }
+
+    const page = (data ?? []) as T[];
+    rows.push(...page);
+
+    if (page.length < batchSize) {
+      break;
+    }
+
+    from += batchSize;
+  }
+
+  return rows;
+}
+
+function chunkArray<T>(items: T[], chunkSize: number): T[][] {
+  if (items.length === 0) {
+    return [];
+  }
+
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += chunkSize) {
+    chunks.push(items.slice(index, index + chunkSize));
+  }
+
+  return chunks;
+}
+
+function compareRowsByCreatedAtAndId(
+  left: { created_at: string | null; id: string },
+  right: { created_at: string | null; id: string },
+): number {
+  const createdAtComparison = (left.created_at ?? "").localeCompare(
+    right.created_at ?? "",
+  );
+
+  if (createdAtComparison !== 0) {
+    return createdAtComparison;
+  }
+
+  return left.id.localeCompare(right.id);
+}
+
 async function loadCatalogImportRows(supabase: AppSupabase) {
-  const [
-    { data: batches, error: batchesError },
-    { data: clusters, error: clustersError },
-    { data: candidates, error: candidatesError },
-    { data: decisions, error: decisionsError },
-  ] = await Promise.all([
-    supabase.from("catalog_import_batches").select("*").order("created_at", {
-      ascending: true,
+  const [batches, clusters, candidates, decisions] = await Promise.all([
+    readPagedRows<CatalogImportBatchRow>({
+      label: "catalog import batches",
+      fetchPage: (from, to) =>
+        supabase
+          .from("catalog_import_batches")
+          .select("*")
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, to) as unknown as Promise<{
+          data: CatalogImportBatchRow[] | null;
+          error: { message: string } | null;
+        }>,
     }),
-    supabase.from("catalog_import_clusters").select("*").order("created_at", {
-      ascending: true,
+    readPagedRows<CatalogImportClusterRow>({
+      label: "catalog import clusters",
+      fetchPage: (from, to) =>
+        supabase
+          .from("catalog_import_clusters")
+          .select("*")
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, to) as unknown as Promise<{
+          data: CatalogImportClusterRow[] | null;
+          error: { message: string } | null;
+        }>,
     }),
-    supabase.from("catalog_import_candidates").select("*").order("created_at", {
-      ascending: true,
+    readPagedRows<CatalogImportCandidateRow>({
+      label: "catalog import candidates",
+      fetchPage: (from, to) =>
+        supabase
+          .from("catalog_import_candidates")
+          .select("*")
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, to) as unknown as Promise<{
+          data: CatalogImportCandidateRow[] | null;
+          error: { message: string } | null;
+        }>,
     }),
-    supabase.from("catalog_import_decisions").select("*").order("created_at", {
-      ascending: true,
+    readPagedRows<CatalogImportDecisionRow>({
+      label: "catalog import decisions",
+      fetchPage: (from, to) =>
+        supabase
+          .from("catalog_import_decisions")
+          .select("*")
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, to) as unknown as Promise<{
+          data: CatalogImportDecisionRow[] | null;
+          error: { message: string } | null;
+        }>,
     }),
   ]);
 
-  if (batchesError) {
-    throw new Error(`Failed to load catalog import batches: ${batchesError.message}`);
-  }
-
-  if (clustersError) {
-    throw new Error(`Failed to load catalog import clusters: ${clustersError.message}`);
-  }
-
-  if (candidatesError) {
-    throw new Error(
-      `Failed to load catalog import candidates: ${candidatesError.message}`,
-    );
-  }
-
-  if (decisionsError) {
-    throw new Error(
-      `Failed to load catalog import decisions: ${decisionsError.message}`,
-    );
-  }
-
   return {
-    batches: (batches ?? []) as CatalogImportBatchRow[],
-    clusters: (clusters ?? []) as CatalogImportClusterRow[],
-    candidates: (candidates ?? []) as CatalogImportCandidateRow[],
-    decisions: (decisions ?? []) as CatalogImportDecisionRow[],
+    batches,
+    clusters,
+    candidates,
+    decisions,
   };
 }
 
 async function loadDraftRows(supabase: AppSupabase) {
-  const [{ data: drafts, error: draftsError }, { data: draftTraits, error: draftTraitsError }] =
-    await Promise.all([
-      supabase.from("idea_drafts").select("*").order("created_at", { ascending: true }),
-      supabase
-        .from("idea_draft_traits")
-        .select("*")
-        .order("created_at", { ascending: true }),
-    ]);
-
-  if (draftsError) {
-    throw new Error(`Failed to load drafts: ${draftsError.message}`);
-  }
-
-  if (draftTraitsError) {
-    throw new Error(`Failed to load draft traits: ${draftTraitsError.message}`);
-  }
+  const [drafts, draftTraits] = await Promise.all([
+    readPagedRows<IdeaDraftRow>({
+      label: "drafts",
+      fetchPage: (from, to) =>
+        supabase
+          .from("idea_drafts")
+          .select("*")
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, to) as unknown as Promise<{
+          data: IdeaDraftRow[] | null;
+          error: { message: string } | null;
+        }>,
+    }),
+    readPagedRows<IdeaDraftTraitRow>({
+      label: "draft traits",
+      fetchPage: (from, to) =>
+        supabase
+          .from("idea_draft_traits")
+          .select("*")
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, to) as unknown as Promise<{
+          data: IdeaDraftTraitRow[] | null;
+          error: { message: string } | null;
+        }>,
+    }),
+  ]);
 
   return {
-    drafts: (drafts ?? []) as IdeaDraftRow[],
-    draftTraits: (draftTraits ?? []) as IdeaDraftTraitRow[],
+    drafts,
+    draftTraits,
   };
 }
 
@@ -296,33 +384,50 @@ async function loadPublishedIdeaRows(
     };
   }
 
-  const [{ data: ideas, error: ideasError }, { data: ideaTraits, error: ideaTraitsError }] =
-    await Promise.all([
-      supabase
-        .from("ideas")
-        .select(
-          "id, slug, title, description, reason_snippet, min_minutes, max_minutes, image_url, is_global, is_deleted, created_at, created_by_user_id, effort_id, default_cadence_tag_id",
-        )
-        .in("id", linkedIdeaIds)
-        .order("created_at", { ascending: true }),
-      supabase
-        .from("idea_traits")
-        .select("*")
-        .in("idea_id", linkedIdeaIds)
-        .order("created_at", { ascending: true }),
+  const ideas: IdeaRow[] = [];
+  const ideaTraits: IdeaTraitRow[] = [];
+
+  for (const ideaIdChunk of chunkArray(Array.from(new Set(linkedIdeaIds)), 200)) {
+    const [chunkIdeas, chunkIdeaTraits] = await Promise.all([
+      readPagedRows<IdeaRow>({
+        label: "published ideas",
+        fetchPage: (from, to) =>
+          supabase
+            .from("ideas")
+            .select(
+              "id, slug, title, description, reason_snippet, min_minutes, max_minutes, image_url, is_global, is_deleted, created_at, created_by_user_id, effort_id, default_cadence_tag_id",
+            )
+            .in("id", ideaIdChunk)
+            .order("created_at", { ascending: true })
+            .order("id", { ascending: true })
+            .range(from, to) as unknown as Promise<{
+            data: IdeaRow[] | null;
+            error: { message: string } | null;
+          }>,
+      }),
+      readPagedRows<IdeaTraitRow>({
+        label: "published idea traits",
+        fetchPage: (from, to) =>
+          supabase
+            .from("idea_traits")
+            .select("*")
+            .in("idea_id", ideaIdChunk)
+            .order("created_at", { ascending: true })
+            .order("id", { ascending: true })
+            .range(from, to) as unknown as Promise<{
+            data: IdeaTraitRow[] | null;
+            error: { message: string } | null;
+          }>,
+      }),
     ]);
 
-  if (ideasError) {
-    throw new Error(`Failed to load published ideas: ${ideasError.message}`);
-  }
-
-  if (ideaTraitsError) {
-    throw new Error(`Failed to load published idea traits: ${ideaTraitsError.message}`);
+    ideas.push(...chunkIdeas);
+    ideaTraits.push(...chunkIdeaTraits);
   }
 
   return {
-    ideas: (ideas ?? []) as IdeaRow[],
-    ideaTraits: (ideaTraits ?? []) as IdeaTraitRow[],
+    ideas: ideas.sort(compareRowsByCreatedAtAndId),
+    ideaTraits: ideaTraits.sort(compareRowsByCreatedAtAndId),
   };
 }
 
@@ -334,39 +439,60 @@ async function loadTraitLookups(
   const uniqueTraitTypeIds = Array.from(new Set(traitTypeIds));
   const uniqueTraitOptionIds = Array.from(new Set(traitOptionIds));
 
-  const [traitTypeResult, traitOptionResult] = await Promise.all([
-    uniqueTraitTypeIds.length > 0
-      ? supabase.from("trait_types").select("id, slug").in("id", uniqueTraitTypeIds)
-      : Promise.resolve({ data: [], error: null }),
-    uniqueTraitOptionIds.length > 0
-      ? supabase
-          .from("trait_options")
-          .select("id, slug, trait_type_id")
-          .in("id", uniqueTraitOptionIds)
-      : Promise.resolve({ data: [], error: null }),
-  ]);
+  const traitTypes: Pick<TraitTypeRow, "id" | "slug">[] = [];
+  for (const traitTypeIdChunk of chunkArray(uniqueTraitTypeIds, 200)) {
+    if (traitTypeIdChunk.length === 0) {
+      continue;
+    }
 
-  if (traitTypeResult.error) {
-    throw new Error(`Failed to load trait type slugs: ${traitTypeResult.error.message}`);
+    const rows = await readPagedRows<Pick<TraitTypeRow, "id" | "slug">>({
+      label: "trait type slugs",
+      fetchPage: (from, to) =>
+        supabase
+          .from("trait_types")
+          .select("id, slug")
+          .in("id", traitTypeIdChunk)
+          .order("id", { ascending: true })
+          .range(from, to) as unknown as Promise<{
+          data: Pick<TraitTypeRow, "id" | "slug">[] | null;
+          error: { message: string } | null;
+        }>,
+    });
+
+    traitTypes.push(...rows);
   }
 
-  if (traitOptionResult.error) {
-    throw new Error(
-      `Failed to load trait option slugs: ${traitOptionResult.error.message}`,
-    );
+  const traitOptions: Pick<TraitOptionRow, "id" | "slug" | "trait_type_id">[] = [];
+  for (const traitOptionIdChunk of chunkArray(uniqueTraitOptionIds, 200)) {
+    if (traitOptionIdChunk.length === 0) {
+      continue;
+    }
+
+    const rows = await readPagedRows<
+      Pick<TraitOptionRow, "id" | "slug" | "trait_type_id">
+    >({
+      label: "trait option slugs",
+      fetchPage: (from, to) =>
+        supabase
+          .from("trait_options")
+          .select("id, slug, trait_type_id")
+          .in("id", traitOptionIdChunk)
+          .order("id", { ascending: true })
+          .range(from, to) as unknown as Promise<{
+          data: Pick<TraitOptionRow, "id" | "slug" | "trait_type_id">[] | null;
+          error: { message: string } | null;
+        }>,
+    });
+
+    traitOptions.push(...rows);
   }
 
   return {
     traitTypeSlugById: new Map(
-      ((traitTypeResult.data ?? []) as Pick<TraitTypeRow, "id" | "slug">[]).map(
-        (row) => [row.id, row.slug],
-      ),
+      traitTypes.map((row) => [row.id, row.slug]),
     ),
     traitOptionSlugById: new Map(
-      ((traitOptionResult.data ?? []) as Pick<
-        TraitOptionRow,
-        "id" | "slug" | "trait_type_id"
-      >[]).map((row) => [row.id, row.slug]),
+      traitOptions.map((row) => [row.id, row.slug]),
     ),
   };
 }
