@@ -6,6 +6,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import StudioShell from "@/components/studio/StudioShell";
+import { hasIngestionEnv } from "@/lib/ingestion/env";
 import { requireStudioUser } from "@/lib/studio/auth";
 import {
   canReactivateIngestionSourceState,
@@ -246,6 +247,34 @@ function readWholeNumber(formData: FormData, key: string): number {
 
 export default async function StudioIngestionPage({ searchParams }: IngestionPageProps) {
   const studioUser = await requireStudioUser("viewer");
+
+  if (!hasIngestionEnv()) {
+    return (
+      <StudioShell role={studioUser.role} email={studioUser.email}>
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-2xl font-semibold">Ingestion Unavailable</h2>
+            <p className="text-sm text-zinc-600">
+              The scraped-source ingestion workflow is not configured in this Studio environment.
+            </p>
+          </div>
+          <div className="rounded border border-zinc-300 bg-white p-4 text-sm text-zinc-700">
+            <p>
+              Studio can run without the separate ingestion database. Drafts, registry, export,
+              and catalog-intake work can continue independently.
+            </p>
+          </div>
+          <Link
+            href="/studio"
+            className="inline-flex rounded border border-zinc-300 px-4 py-2 text-sm hover:border-zinc-600"
+          >
+            Back to Dashboard
+          </Link>
+        </section>
+      </StudioShell>
+    );
+  }
+
   const params = (await searchParams) ?? {};
   const canGovernSources = hasStudioRoleAtLeast(studioUser.role, "admin");
 

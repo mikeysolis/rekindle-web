@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 
 import DraftEditorForm from "@/components/studio/DraftEditorForm";
 import StudioShell from "@/components/studio/StudioShell";
+import { isRedirectError } from "@/lib/navigation";
 import { requireStudioUser } from "@/lib/studio/auth";
 import {
   DRAFT_STATUSES,
@@ -11,6 +12,7 @@ import {
   isStatusTransitionAllowed,
   parseDraftEditableFields,
   parseDraftStatus,
+  publishDraftToIdea,
   saveDraft,
   type DraftStatus,
 } from "@/lib/studio/drafts";
@@ -19,7 +21,14 @@ import { hasStudioRoleAtLeast } from "@/lib/studio/roles";
 
 type EditDraftPageProps = {
   params: Promise<{ id: string }>;
-  searchParams?: Promise<{ saved?: string; error?: string; warn?: string }>;
+  searchParams?: Promise<{
+    saved?: string;
+    error?: string;
+    warn?: string;
+    info?: string;
+    published?: string;
+    created?: string;
+  }>;
 };
 
 export default async function StudioEditDraftPage({
@@ -42,8 +51,9 @@ export default async function StudioEditDraftPage({
 
   const canEdit = hasStudioRoleAtLeast(studioUser.role, "editor");
 
-  const transitionOptions: DraftStatus[] = DRAFT_STATUSES.filter((status) =>
-    isStatusTransitionAllowed(draft.status, status),
+  const transitionOptions: DraftStatus[] = DRAFT_STATUSES.filter(
+    (status) =>
+      status !== "published" && isStatusTransitionAllowed(draft.status, status),
   );
 
   async function saveDraftAction(formData: FormData) {
@@ -80,7 +90,46 @@ export default async function StudioEditDraftPage({
       );
     }
 
-    redirect(`/studio/drafts/${formDraftId}?saved=1`);
+    const params = new URLSearchParams({ saved: "1" });
+
+    if (result.message) {
+      params.set("info", result.message);
+    }
+
+    redirect(`/studio/drafts/${formDraftId}?${params.toString()}`);
+  }
+
+  async function publishDraftAction(formData: FormData) {
+    "use server";
+
+    const actingUser = await requireStudioUser("editor");
+    const formDraftId = String(formData.get("draft_id") ?? "");
+
+    if (!formDraftId || formDraftId !== id) {
+      redirect(`/studio/drafts/${id}?error=${encodeURIComponent("Invalid draft id.")}`);
+    }
+
+    try {
+      const result = await publishDraftToIdea({
+        draftId: formDraftId,
+        actorUserId: actingUser.userId,
+      });
+
+      const params = new URLSearchParams({
+        published: "1",
+        created: result.createdIdea ? "1" : "0",
+      });
+
+      redirect(`/studio/drafts/${formDraftId}?${params.toString()}`);
+    } catch (error) {
+      if (isRedirectError(error)) {
+        throw error;
+      }
+
+      const message =
+        error instanceof Error ? error.message : "Failed to publish draft.";
+      redirect(`/studio/drafts/${formDraftId}?error=${encodeURIComponent(message)}`);
+    }
   }
 
   return (
@@ -94,6 +143,20 @@ export default async function StudioEditDraftPage({
         {query.saved && (
           <p className="rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
             Draft saved.
+          </p>
+        )}
+
+        {query.info && (
+          <p className="rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700">
+            {query.info}
+          </p>
+        )}
+
+        {query.published && (
+          <p className="rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+            {query.created === "1"
+              ? "Draft published to a new idea."
+              : "Draft re-published to its linked idea."}
           </p>
         )}
 
@@ -115,7 +178,8 @@ export default async function StudioEditDraftPage({
           initialTraitSelections={traitSelections}
           canEdit={canEdit}
           transitionOptions={transitionOptions}
-          action={saveDraftAction}
+          saveAction={saveDraftAction}
+          publishAction={publishDraftAction}
         />
       </section>
     </StudioShell>

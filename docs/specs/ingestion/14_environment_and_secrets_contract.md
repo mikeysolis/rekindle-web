@@ -1,5 +1,5 @@
-# Environment and Secrets Contract (v1)
-_Last updated: 2026-02-28_
+# Environment and Secrets Contract (v2)
+_Last updated: 2026-03-09_
 
 ## 1) Purpose
 
@@ -13,8 +13,17 @@ Required:
 
 1. `NEXT_PUBLIC_SUPABASE_URL`
 2. `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-3. `INGEST_SUPABASE_URL`
-4. `INGEST_SUPABASE_SERVICE_ROLE_KEY`
+
+Optional:
+
+1. `INGEST_SUPABASE_URL`
+2. `INGEST_SUPABASE_SERVICE_ROLE_KEY`
+
+Rule:
+
+1. Studio can run without ingestion credentials.
+2. If Studio enables the legacy scraped-ingestion UI, both ingestion vars must be set together.
+3. Partial configuration is invalid.
 
 ### Ingestion runtime (pipeline worker/CLI)
 
@@ -67,8 +76,9 @@ Validation must fail startup when:
 
 1. required variables for that runtime profile are missing.
 2. a forbidden variable is present.
-3. `INGEST_SUPABASE_URL` equals `NEXT_PUBLIC_SUPABASE_URL`.
-4. for reconciliation runtime, `APP_SUPABASE_URL` equals `INGEST_SUPABASE_URL`.
+3. Studio sets only one of `INGEST_SUPABASE_URL` or `INGEST_SUPABASE_SERVICE_ROLE_KEY`.
+4. `INGEST_SUPABASE_URL` equals `NEXT_PUBLIC_SUPABASE_URL`.
+5. for reconciliation runtime, `APP_SUPABASE_URL` equals `INGEST_SUPABASE_URL`.
 
 Error messages must:
 

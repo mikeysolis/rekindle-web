@@ -1,6 +1,8 @@
 import { execFileSync, spawnSync } from "node:child_process";
 
 const BLOCKED_STAGE_PATH_PREFIXES = ["tmp/", "snapshots/"];
+const DEFAULT_GIT_SHOW_MAX_BUFFER = 20 * 1024 * 1024;
+const GIT_SHOW_BUFFER_HEADROOM = 1024 * 1024;
 
 const SECRET_PATTERNS = [
   {
@@ -123,13 +125,49 @@ const mask = (value) => {
   return `${trimmed.slice(0, 4)}...${trimmed.slice(-4)}`;
 };
 
+const isSubmodulePath = (file) => {
+  const output = execFileSync("git", ["ls-files", "--stage", "--", file], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+  }).trim();
+
+  if (output.length === 0) {
+    return false;
+  }
+
+  const [mode] = output.split(/\s+/, 2);
+  return mode === "160000";
+};
+
+const getStagedBlobSize = (file) => {
+  const raw = execFileSync("git", ["cat-file", "-s", `:${file}`], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+  }).trim();
+
+  const size = Number.parseInt(raw, 10);
+  if (!Number.isFinite(size) || size < 0) {
+    throw new Error(`Unable to determine staged blob size for ${file}`);
+  }
+
+  return size;
+};
+
 const scanForSecrets = (stagedFiles) => {
   const findings = [];
 
   for (const file of stagedFiles) {
+    if (isSubmodulePath(file)) {
+      continue;
+    }
+
+    const stagedBlobSize = getStagedBlobSize(file);
     const contentBuffer = execFileSync("git", ["show", `:${file}`], {
       cwd: process.cwd(),
-      maxBuffer: 20 * 1024 * 1024,
+      maxBuffer: Math.max(
+        DEFAULT_GIT_SHOW_MAX_BUFFER,
+        stagedBlobSize + GIT_SHOW_BUFFER_HEADROOM
+      ),
     });
 
     if (!isProbablyTextBuffer(contentBuffer)) {

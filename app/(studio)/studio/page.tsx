@@ -3,11 +3,13 @@ import { redirect } from "next/navigation";
 
 import StudioShell from "@/components/studio/StudioShell";
 import { requireStudioUser } from "@/lib/studio/auth";
+import { hasIngestionEnv } from "@/lib/ingestion/env";
 import { hasStudioRoleAtLeast } from "@/lib/studio/roles";
 import { createSupabaseServerClient } from "@/lib/database/server";
 
 export default async function StudioDashboardPage() {
   const studioUser = await requireStudioUser("viewer");
+  const ingestionEnabled = hasIngestionEnv();
 
   async function signOutAction() {
     "use server";
@@ -22,25 +24,38 @@ export default async function StudioDashboardPage() {
       <section className="space-y-4">
         <h2 className="text-2xl font-semibold">Studio Dashboard</h2>
         <p className="text-sm text-zinc-600">
-          Review ingestion candidates, edit drafts, and use Registry to verify traits.
+          Review catalog intake, edit drafts, publish ideas, and export CSVs when needed.
         </p>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
           <Link
             className="rounded border border-zinc-300 bg-white p-4 hover:border-zinc-600"
             href="/studio/drafts"
           >
             <h3 className="font-medium">Drafts</h3>
-            <p className="mt-1 text-sm text-zinc-600">Create and edit idea drafts.</p>
+            <p className="mt-1 text-sm text-zinc-600">
+              Create and edit draft records, then publish approved ideas.
+            </p>
           </Link>
           <Link
             className="rounded border border-zinc-300 bg-white p-4 hover:border-zinc-600"
-            href="/studio/ingestion"
+            href="/studio/catalog-intake"
           >
-            <h3 className="font-medium">Ingestion</h3>
+            <h3 className="font-medium">Catalog Intake</h3>
             <p className="mt-1 text-sm text-zinc-600">
-              Review scraped candidates before promotion.
+              Review generated title batches and promote preferred concepts to drafts.
             </p>
           </Link>
+          {ingestionEnabled && (
+            <Link
+              className="rounded border border-zinc-300 bg-white p-4 hover:border-zinc-600"
+              href="/studio/ingestion"
+            >
+              <h3 className="font-medium">Ingestion</h3>
+              <p className="mt-1 text-sm text-zinc-600">
+                Review scraped candidates before promotion.
+              </p>
+            </Link>
+          )}
           <Link
             className="rounded border border-zinc-300 bg-white p-4 hover:border-zinc-600"
             href="/studio/registry"
@@ -50,10 +65,21 @@ export default async function StudioDashboardPage() {
           </Link>
           <Link
             className="rounded border border-zinc-300 bg-white p-4 hover:border-zinc-600"
+            href="/studio/checkpoint"
+          >
+            <h3 className="font-medium">Checkpoint</h3>
+            <p className="mt-1 text-sm text-zinc-600">
+              Create Git-backed named checkpoints before resetting the database.
+            </p>
+          </Link>
+          <Link
+            className="rounded border border-zinc-300 bg-white p-4 hover:border-zinc-600"
             href="/studio/export"
           >
-            <h3 className="font-medium">Export</h3>
-            <p className="mt-1 text-sm text-zinc-600">Download publishable drafts as CSV.</p>
+            <h3 className="font-medium">CSV Export</h3>
+            <p className="mt-1 text-sm text-zinc-600">
+              Download publishable drafts as CSV for secondary workflows.
+            </p>
           </Link>
         </div>
 
