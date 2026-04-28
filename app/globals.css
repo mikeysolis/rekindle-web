@@ -24,3 +24,44 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+.legal-document {
+  color: #3f3f46;
+  font-size: 1rem;
+  line-height: 1.75;
+}
+
+.legal-document h2 {
+  color: #18181b;
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.35;
+  margin-top: 2.5rem;
+}
+
+.legal-document h3 {
+  color: #27272a;
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.45;
+  margin-top: 1.75rem;
+}
+
+.legal-document p,
+.legal-document ul {
+  margin-top: 1rem;
+}
+
+.legal-document ul {
+  list-style: disc;
+  padding-left: 1.35rem;
+}
+
+.legal-document li + li {
+  margin-top: 0.5rem;
+}
+
+.legal-document strong {
+  color: #18181b;
+  font-weight: 600;
+}

@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Rekindle Web",
-  description: "Rekindle web and studio",
+  title: "Rekindle",
+  description: "Relationship reminders and planning tools.",
 };
 
 export default function RootLayout({
