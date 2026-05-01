@@ -18,10 +18,23 @@ Create a route at:
 
 This page should:
 - read `t` (invite token) from the query string
-- attempt to open the app (deep link)
+- attempt to open the app using the variant-specific deep link scheme
 - show a fallback page with a manual “Open in app” link
 
 If this page is missing, the OS considers the link invalid and app links won’t work.
+
+Expected scheme mapping:
+
+| Host | App scheme |
+| --- | --- |
+| `dev.userekindle.com` | `rekindle-dev://` |
+| `staging.userekindle.com` | `rekindle-staging://` |
+| `userekindle.com` | `rekindle://` |
+| `www.userekindle.com` | `rekindle://` |
+
+For preview or non-canonical hosts, set `REKINDLE_LINK_SCHEME` to one of
+`rekindle-dev`, `rekindle-staging`, or `rekindle`. If that env var is not
+set, the route falls back to `WELL_KNOWN_VARIANT` and then production.
 
 ---
 
@@ -34,47 +47,48 @@ app/link/accept/page.tsx
 ```
 
 ```tsx
-'use client'
+import LinkAcceptClient from './LinkAcceptClient'
+import { headers } from 'next/headers'
 
-import { useSearchParams } from 'next/navigation'
-import { useEffect } from 'react'
+const hostSchemeMap = new Map([
+  ['dev.userekindle.com', 'rekindle-dev'],
+  ['staging.userekindle.com', 'rekindle-staging'],
+  ['userekindle.com', 'rekindle'],
+  ['www.userekindle.com', 'rekindle'],
+])
 
-export default function LinkAccept() {
-  const params = useSearchParams()
-  const token = params.get('t') ?? ''
+function resolveEnvScheme(): string {
+  if (process.env.REKINDLE_LINK_SCHEME) {
+    return process.env.REKINDLE_LINK_SCHEME
+  }
 
-  useEffect(() => {
-    if (!token) return
-    // OS will open app automatically when universal links are configured.
-    // This effect is just a placeholder; no redirect needed.
-  }, [token])
+  if (process.env.WELL_KNOWN_VARIANT === 'dev') return 'rekindle-dev'
+  if (process.env.WELL_KNOWN_VARIANT === 'staging') return 'rekindle-staging'
 
-  return (
-    <main style={{ padding: 24 }}>
-      <h1>Open Rekindle</h1>
-      <p>We’re opening the app…</p>
-      <p>If it doesn’t open, you can:</p>
-      <ul>
-        <li>
-          <a
-            href={`rekindle://link/accept?t=${encodeURIComponent(token)}`}
-          >
-            Open in app
-          </a>
-        </li>
-        <li>
-          <a href="https://userekindle.com">Get the app</a>
-        </li>
-      </ul>
-    </main>
-  )
+  return 'rekindle'
+}
+
+export default async function LinkAcceptPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ t?: string }>
+}) {
+  const host = ((await headers()).get('host') ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/:\d+$/, '')
+  const scheme = hostSchemeMap.get(host) ?? resolveEnvScheme()
+  const params = (await searchParams) ?? {}
+
+  return <LinkAcceptClient scheme={scheme} token={params.t ?? ''} />
 }
 ```
 
 Notes:
 - This is **redirect-only** and intentionally simple.
 - iOS/Android will open the app directly if universal links are set up.
-- The manual `rekindle://` fallback still works on devices with the app installed.
+- The manual fallback must use the matching scheme for the current host:
+  `rekindle-dev://`, `rekindle-staging://`, or `rekindle://`.
 
 ---
 
@@ -114,7 +128,10 @@ Then test:
 
 ```
 https://dev.userekindle.com/link/accept?t=TESTTOKEN
+https://staging.userekindle.com/link/accept?t=TESTTOKEN
+https://userekindle.com/link/accept?t=TESTTOKEN
 ```
 
-It should not 404. If the app is installed, the OS should open it. Otherwise,
-the fallback page should display.
+Each URL should not 404. If the matching app build is installed, the OS
+should open it. Otherwise, the fallback page should display and its
+manual “Open in app” link should use the matching app scheme.
