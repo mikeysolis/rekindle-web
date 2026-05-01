@@ -3,14 +3,18 @@
 import { useEffect, useMemo } from "react";
 
 type LinkAcceptClientProps = {
+  scheme: string;
   token: string;
 };
 
-export default function LinkAcceptClient({ token }: LinkAcceptClientProps) {
+export default function LinkAcceptClient({
+  scheme,
+  token,
+}: LinkAcceptClientProps) {
   const deepLink = useMemo(() => {
-    if (!token) return "rekindle://link/accept";
-    return `rekindle://link/accept?t=${encodeURIComponent(token)}`;
-  }, [token]);
+    if (!token) return `${scheme}://link/accept`;
+    return `${scheme}://link/accept?t=${encodeURIComponent(token)}`;
+  }, [scheme, token]);
 
   useEffect(() => {
     if (!token) return;
