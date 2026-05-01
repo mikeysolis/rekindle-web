@@ -36,6 +36,11 @@ For preview or non-canonical hosts, set `REKINDLE_LINK_SCHEME` to one of
 `rekindle-dev`, `rekindle-staging`, or `rekindle`. If that env var is not
 set, the route falls back to `WELL_KNOWN_VARIANT` and then production.
 
+Important: the deep-link route and the well-known files are separate
+checks. The route can render `rekindle-staging://` correctly while
+`/.well-known/*` still serves production app IDs if the deployment copied
+the wrong well-known variant.
+
 ---
 
 ## 2) Sample NextJS Page (App Router)
@@ -113,6 +118,17 @@ Example:
 - staging → `https://staging.userekindle.com/.well-known/`
 - dev → `https://dev.userekindle.com/.well-known/`
 
+`scripts/sync-well-known.mjs` chooses the source folder from
+`WELL_KNOWN_VARIANT` when it is set. On Vercel staging, set:
+
+```
+WELL_KNOWN_VARIANT=staging
+```
+
+Without that explicit value, the script infers from
+`VERCEL_GIT_COMMIT_REF`: `main` maps to production, `staging` maps to
+staging, `release/*` maps to staging, and all other branches map to dev.
+
 ---
 
 ## 4) Quick Checks
@@ -122,7 +138,16 @@ Verify these URLs return **200 + JSON**:
 ```
 https://dev.userekindle.com/.well-known/apple-app-site-association
 https://dev.userekindle.com/.well-known/assetlinks.json
+https://staging.userekindle.com/.well-known/apple-app-site-association
+https://staging.userekindle.com/.well-known/assetlinks.json
 ```
+
+For staging, the JSON should contain:
+
+- Apple app ID:
+  `KA5DZ8RZ59.com.mikesolis.rekindle.staging`
+- Android package name:
+  `com.mikesolis.rekindle.staging`
 
 Then test:
 
